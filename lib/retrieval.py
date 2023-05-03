@@ -73,25 +73,36 @@ def append_dict_keys_values(dict1: dict, dict2: dict):
 
 
 if __name__ == "__main__":
-    field = np.random.randn(20, 20) + 1j * np.random.randn(20, 20)
-    tf = transforms.fourier_transform(field, pad=2)
-
+    sz = 200
+    field = np.random.randn(sz, sz) + 1j * np.random.randn(sz, sz)
 
     grid = np.arange(start=0, stop=field.shape[0]) - field.shape[0] / 2
     X, Y = np.meshgrid(grid, grid)
     R = np.sqrt(np.square(X) + np.square(Y))
 
-    support_radius = 5
+    field1 = np.ones(field.shape) * np.exp(-np.square(R/20))
+    field1 = field1 * np.exp(1j * (np.power(X/10, 3) + np.power(Y/10, 3)))
+    field2 = np.ones(field.shape) * np.exp(-np.square(R/10))
+    field2 = field2 * np.exp(1j * (np.square(X/3) + np.square(Y/3)))
+    field = field1 + field2
+
+    ft = transforms.fourier_transform(field, pad=2)
+
+    support_radius = 60
     support = np.zeros(field.shape, dtype=bool)
     support[R <= support_radius] = True
 
-    # y_hat, tf_hat, results = error_reduction_fourier((np.abs(field), np.abs(tf)), pad=1, max_iter=100)
-    # y_hat, tf_hat, results = hio_fourier((np.abs(field), np.abs(tf)), support, pad=1, max_iter=100)
-    y_hat, tf_hat, results = hio_er_fourier((np.abs(field), np.abs(tf)), support, pad=1, max_iter=3)
+    # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), pad=2, max_iter=100)
+    # y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=100)
+    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=5, max_er_iter=200, max_hio_iter=100)
 
     plt.figure()
     plt.plot(results['mse_plane2'], label='Fourier MSE')
     plt.title('MSE')
     plt.xlabel('Iteration #')
     plt.yscale('log')
+
+
+    compare_complex_fields(field, y_hat)
+    # compare_complex_fields(ft, ft_hat)
     plt.show()
