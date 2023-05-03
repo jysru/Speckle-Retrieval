@@ -1,23 +1,46 @@
 import numpy as np
 
 
-def mse(x, y):
-    return np.mean(np.square(np.abs(x) - np.abs(y)))
+def mae(x: np.ndarray, y: np.ndarray):
+    """Return the mean absolute error between the two arrays."""
+    if np.iscomplexobj(x):
+        x = np.abs(x)
+    if np.iscomplexobj(y):
+        y = np.abs(y)
+    return np.mean(np.abs(x - y))
 
 
-def quality(x, y):
-    return np.power(np.abs(np.sum(x * np.conjugate(y))) / np.sum(np.abs(x) * np.abs(y)), 2)
+def mse(x: np.ndarray, y: np.ndarray):
+    """Return the mean square error between the two arrays."""
+    if np.iscomplexobj(x):
+        x = np.abs(x)
+    if np.iscomplexobj(y):
+        y = np.abs(y)
+    return np.mean(np.square(x - y))
+
+
+def dot_product(x: np.ndarray, y: np.ndarray, normalized: bool = True):
+    """Return the scalar product between the two complex arrays."""
+    prod = np.sum(x * np.conjugate(y))
+    norm = np.sum(np.abs(x) * np.abs(y))
+    return prod / norm if normalized else prod
+
+
+def quality(x, y, squared: bool = True, inversed: bool = False):
+    """Return the magnitude of the normalized dot product between the two complex arrays."""
+    q = np.abs(dot_product(x, y, normalized=True))
+    if squared:
+        q = np.square(q)
+    if inversed:
+        q = 1 - q
+    return q
 
 
 def pearson(x, y):
-        x = np.abs(x)
-        y = np.abs(y)
-        mean_x = np.mean(x)
-        mean_y = np.mean(y)
-        std_x = np.std(x)
-        std_y = np.std(y)
-        n = x.size
+        if np.iscomplexobj(x):
+            x = np.abs(x)
+        if np.iscomplexobj(y):
+            y = np.abs(y)
 
-        s = np.sum((x - mean_x) * (y - mean_y) / n)
-        r = s / (std_x * std_y)
-        return r
+        s = np.sum((x - np.mean(x)) * (y - np.mean(y)) / x.size)
+        return s / (np.std(x) * np.std(y))
