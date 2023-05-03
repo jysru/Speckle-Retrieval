@@ -20,7 +20,7 @@ def complex_imshow(field, figsize: tuple[int,int] = (15,5), remove_ticks: bool =
     fig, axs = plt.subplots(1, 3, figsize=figsize)
     pl0 = axs[0].imshow(np.abs(field), cmap='gray')
     pl1 = axs[1].imshow(np.angle(field), cmap='hsv')
-    pl2 = axs[2].imshow(complex_to_hsv(field), rmin=0, rmax=np.max(np.abs(field)))
+    pl2 = axs[2].imshow(complex_to_hsv(field, rmin=0, rmax=np.max(np.abs(field))))
     pls = [pl0, pl1, pl2]
 
     _ = axs[0].set_title("Amplitude")
@@ -35,26 +35,35 @@ def complex_imshow(field, figsize: tuple[int,int] = (15,5), remove_ticks: bool =
 
 
 def compare_complex_fields(field1, field2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False):
-    ref1, ref2 = int(field1.shape), int(field2.shape)
+    ref1, ref2 = list(map(int, field1.shape)), list(map(int, field2.shape))
 
     fig, axs = plt.subplots(1, 6, figsize=figsize)
-    pl0 = axs[0,0].imshow(np.abs(field1), cmap='gray')
-    pl1 = axs[0,1].imshow(np.abs(field2), cmap='gray')
-    pl2 = axs[0,2].imshow(np.angle(field1 * np.exp(-1j * np.angle(field1[*ref1]))), cmap='hsv')
-    pl3 = axs[0,3].imshow(np.angle(field2 * np.exp(-1j * np.angle(field2[*ref2]))), cmap='hsv')
-    pl4 = axs[0,4].imshow(complex_to_hsv(field1 * np.exp(-1j * np.angle(field1[*ref1])), rmin=0, rmax=np.max(np.abs(field1))), cmap='gray')
-    pl5 = axs[0,5].imshow(complex_to_hsv(field2 * np.exp(-1j * np.angle(field2[*ref2])), rmin=0, rmax=np.max(np.abs(field2))), cmap='gray')
+    pl0 = axs[0].imshow(np.abs(field1), cmap='gray')
+    pl1 = axs[1].imshow(np.abs(field2), cmap='gray')
+    pl2 = axs[2].imshow(np.angle(field1 * np.exp(-1j * np.angle(field1[ref1[0]//2, ref1[1]//2]))), cmap='hsv')
+    pl3 = axs[3].imshow(np.angle(field2 * np.exp(-1j * np.angle(field2[ref2[0]//2, ref2[1]//2]))), cmap='hsv')
+    pl4 = axs[4].imshow(complex_to_hsv(field1 * np.exp(-1j * np.angle(field1[ref1[0]//2, ref1[1]//2])), rmin=0, rmax=np.max(np.abs(field1))), cmap='gray')
+    pl5 = axs[5].imshow(complex_to_hsv(field2 * np.exp(-1j * np.angle(field2[ref2[0]//2, ref2[1]//2])), rmin=0, rmax=np.max(np.abs(field2))), cmap='gray')
     pls = [pl0, pl1, pl2, pl3, pl4, pl5]
 
-    _ = axs[0,0].set_title("Amplitude 1\nImage plane")
-    _ = axs[0,1].set_title("Amplitude 2\nImage plane")
-    _ = axs[0,2].set_title("Phase 1\nImage plane")
-    _ = axs[0,3].set_title("Phase 2\nImage plane")
-    _ = axs[0,4].set_title("Complex field 1")
-    _ = axs[0,5].set_title("Complex field 2")
+    _ = axs[0].set_title("Amplitude 1")
+    _ = axs[1].set_title("Amplitude 2")
+    _ = axs[2].set_title("Phase 1")
+    _ = axs[3].set_title("Phase 2")
+    _ = axs[4].set_title("Complex field 1")
+    _ = axs[5].set_title("Complex field 2")
 
     if remove_ticks:
-        _ = [axs[j,i].set_xticks([]) for i in range(len(axs[0])) for j in range(len(axs))]
-        _ = [axs[j,i].set_yticks([]) for i in range(len(axs[0])) for j in range(len(axs))]
+        _ = [axs[i].set_xticks([]) for i in range(len(axs))]
+        _ = [axs[i].set_yticks([]) for i in range(len(axs))]
 
     return (fig, axs, pls)
+
+
+
+if __name__ == "__main__":
+    field1 = np.random.randn(20, 20) + 1j * np.random.randn(20, 20)
+    field2 = np.random.randn(20, 20) + 1j * np.random.randn(20, 20)
+
+    compare_complex_fields(field1, field2, remove_ticks=True)
+    plt.show()
