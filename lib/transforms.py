@@ -1,7 +1,9 @@
 import numpy as np
+import matplotlib.pyplot as plt
+from plots import compare_complex_fields
 
 
-def crop_img(img, newsize):
+def crop_img(img: np.ndarray, newsize: tuple[int, int]):
     """ Crop image to new size, from the center."""
     diff_row = img.shape[0] - newsize[0]
     diff_col = img.shape[1] - newsize[1]
@@ -9,14 +11,14 @@ def crop_img(img, newsize):
     return img[crop_row:-crop_row, crop_col:-crop_col]
 
 
-def pad_img(img, pad: float = 1):
+def pad_img(img: np.ndarray, pad: float = 1):
     """ Pad zeroes on each axis.
         Default pad value is 1, which means that the padded image is twice the original size on each axis.
     """
     return np.pad(img, pad_width=[int(img.shape[0] * pad / 2), int(img.shape[1] * pad / 2)], mode='constant')
 
 
-def fourier_transform(field, pad: float = None):
+def fourier_transform(field: np.ndarray, pad: float = None):
     if pad is not None:
         init_shape = field.shape
         field = pad_img(field, pad)
@@ -26,12 +28,12 @@ def fourier_transform(field, pad: float = None):
     return crop_img(ft, init_shape) if pad is not None else ft
 
 
-def fresnel_transform(field, dz: float = 0.0, pad: float = 2, wavelength: float = 1064e-9, pixel_size: float = 5.04e-6):
+def fresnel_transform(field: np.ndarray, dz: float = 0.0, pad: float = 2, wavelength: float = 1064e-9, pixel_size: float = 5.04e-6):
     if pad is not None:
         init_shape = field.shape
         field = pad_img(field, pad)
     
-    kx, ky = fresnel_grids(field, pixel_size=pixel_size)
+    kx, ky = fourier_grids(field, pixel_size=pixel_size)
 
     ft = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(field)))
     propagator = dz * np.sqrt(4 * np.square(np.pi/wavelength) - np.square(kx) - np.square(ky))
@@ -40,7 +42,7 @@ def fresnel_transform(field, dz: float = 0.0, pad: float = 2, wavelength: float 
     return crop_img(ift, init_shape) if pad is not None else ft
 
 
-def fresnel_grids(field, pixel_size: float):
+def fourier_grids(field: np.ndarray, pixel_size: float):
     # Spatial plane
     dx = pixel_size
     n_pts = field.shape[0]
@@ -57,10 +59,19 @@ def fresnel_grids(field, pixel_size: float):
     return (kx, ky)
 
 
-def inverse_fourier_transform(field, pad: float = None):
+def inverse_fourier_transform(field: np.ndarray, pad: float = None):
     if pad is not None:
         init_shape = field.shape
         field = pad_img(field, pad)
         
     ift = np.fft.ifftshift(np.fft.ifft2(np.fft.ifftshift(field)))
     return crop_img(ift, init_shape) if pad is not None else ift
+
+
+if __name__ == "__main__":
+    field = np.random.randn(20, 20) + 1j * np.random.randn(20, 20)
+    ft = fourier_transform(field, pad=2)
+    ift = inverse_fourier_transform(ft, pad=2)
+
+    compare_complex_fields(field, ift)
+    plt.show()
