@@ -2,7 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import hsv_to_rgb
 
-def Complex2HSV(z, rmin, rmax, hue_start=0):
+
+def complex_to_hsv(z, rmin, rmax, hue_start=0):
     # get amplidude of z and limit to [rmin, rmax]
     amp = np.abs(z)
     amp = np.where(amp < rmin, rmin, amp)
@@ -11,38 +12,49 @@ def Complex2HSV(z, rmin, rmax, hue_start=0):
     # HSV are values in range [0,1]
     h = (ph % 360) / 360
     s = 0.85 * np.ones_like(h)
-    v = (amp -rmin) / (rmax - rmin)
+    v = (amp - rmin) / (rmax - rmin)
     return hsv_to_rgb(np.dstack((h,s,v)))
 
 
-fig, axs = plt.subplots(2, 6, figsize=(18, 6))
-pl0 = axs[0,0].imshow(np.abs(output_field), cmap='gray')
-pl0 = axs[0,1].imshow(np.abs(y_hat), cmap='gray')
-pl2 = axs[0,2].imshow(np.angle(output_field * np.exp(-1j * np.angle(output_field[128,128]))), cmap='hsv')
-pl2 = axs[0,3].imshow(np.angle(y_hat * np.exp(-1j * np.angle(y_hat[128,128]))), cmap='hsv')
-pl4 = axs[0,4].imshow(Complex2HSV(output_field * np.exp(-1j * np.angle(output_field[128,128])), rmin=0, rmax=np.max(np.abs(output_field))), cmap='gray')
-pl4 = axs[0,5].imshow(Complex2HSV(y_hat * np.exp(-1j * np.angle(y_hat[128,128])), rmin=0, rmax=np.max(np.abs(y_hat))), cmap='gray')
+def complex_imshow(field, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False):
+    fig, axs = plt.subplots(1, 3, figsize=figsize)
+    pl0 = axs[0].imshow(np.abs(field), cmap='gray')
+    pl1 = axs[1].imshow(np.angle(field), cmap='hsv')
+    pl2 = axs[2].imshow(complex_to_hsv(field), rmin=0, rmax=np.max(np.abs(field)))
+    pls = [pl0, pl1, pl2]
 
-pl0 = axs[1,0].imshow(np.abs(tff_y_noref), cmap='gray')
-pl0 = axs[1,1].imshow(np.abs(tff_y_hat), cmap='gray')
-pl2 = axs[1,2].imshow(np.angle(tff_y_noref * np.exp(-1j * np.angle(tff_y_noref[128,128]))), cmap='hsv')
-pl2 = axs[1,3].imshow(np.angle(tff_y_hat * np.exp(-1j * np.angle(tff_y_hat[128,128]))), cmap='hsv')
-pl4 = axs[1,4].imshow(Complex2HSV(tff_y_noref * np.exp(-1j * np.angle(tff_y_noref[128,128])), rmin=0, rmax=np.max(np.abs(tff_y_noref))), cmap='gray')
-pl4 = axs[1,5].imshow(Complex2HSV(tff_y_hat * np.exp(-1j * np.angle(tff_y_hat[128,128])), rmin=0, rmax=np.max(np.abs(tff_y_hat))), cmap='gray')
+    _ = axs[0].set_title("Amplitude")
+    _ = axs[1].set_title("Phase")
+    _ = axs[2].set_title("Complex field")
 
-_ = axs[0,0].set_title("Target amplitude\nImage plane")
-_ = axs[0,1].set_title("Retrieved amplitude\nImage plane")
-_ = axs[0,2].set_title("Target phase\nImage plane")
-_ = axs[0,3].set_title("Retrieved phase\nImage plane")
-_ = axs[0,4].set_title("Target field (sim TM)\nImage plane")
-_ = axs[0,5].set_title("Retrieved field (ref TM)\nImage plane")
+    if remove_ticks:
+        _ = [axs[i].set_xticks([]) for i in range(len(axs))]
+        _ = [axs[i].set_yticks([]) for i in range(len(axs))]
+    
+    return (fig, axs, pls)
 
-_ = axs[1,0].set_title("Target amplitude\nFourier plane")
-_ = axs[1,1].set_title("Retrieved amplitude\nFourier plane")
-_ = axs[1,2].set_title("Target phase\nFourier plane")
-_ = axs[1,3].set_title("Retrieved phase\nFourier plane")
-_ = axs[1,4].set_title("Target field (sim TM)\nFourier plane")
-_ = axs[1,5].set_title("Retrieved field (ref TM)\nFourier plane")
 
-_ = [axs[j,i].set_xticks([]) for i in range(6) for j in range(2)]
-_ = [axs[j,i].set_yticks([]) for i in range(6) for j in range(2)]
+def compare_complex_fields(field1, field2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False):
+    ref1, ref2 = int(field1.shape), int(field2.shape)
+
+    fig, axs = plt.subplots(1, 6, figsize=figsize)
+    pl0 = axs[0,0].imshow(np.abs(field1), cmap='gray')
+    pl1 = axs[0,1].imshow(np.abs(field2), cmap='gray')
+    pl2 = axs[0,2].imshow(np.angle(field1 * np.exp(-1j * np.angle(field1[*ref1]))), cmap='hsv')
+    pl3 = axs[0,3].imshow(np.angle(field2 * np.exp(-1j * np.angle(field2[*ref2]))), cmap='hsv')
+    pl4 = axs[0,4].imshow(complex_to_hsv(field1 * np.exp(-1j * np.angle(field1[*ref1])), rmin=0, rmax=np.max(np.abs(field1))), cmap='gray')
+    pl5 = axs[0,5].imshow(complex_to_hsv(field2 * np.exp(-1j * np.angle(field2[*ref2])), rmin=0, rmax=np.max(np.abs(field2))), cmap='gray')
+    pls = [pl0, pl1, pl2, pl3, pl4, pl5]
+
+    _ = axs[0,0].set_title("Amplitude 1\nImage plane")
+    _ = axs[0,1].set_title("Amplitude 2\nImage plane")
+    _ = axs[0,2].set_title("Phase 1\nImage plane")
+    _ = axs[0,3].set_title("Phase 2\nImage plane")
+    _ = axs[0,4].set_title("Complex field 1")
+    _ = axs[0,5].set_title("Complex field 2")
+
+    if remove_ticks:
+        _ = [axs[j,i].set_xticks([]) for i in range(len(axs[0])) for j in range(len(axs))]
+        _ = [axs[j,i].set_yticks([]) for i in range(len(axs[0])) for j in range(len(axs))]
+
+    return (fig, axs, pls)
