@@ -26,7 +26,7 @@ def dot_product(x: np.ndarray, y: np.ndarray, normalized: bool = True):
     return prod / norm if normalized else prod
 
 
-def quality(x, y, squared: bool = True, inversed: bool = False):
+def quality(x: np.ndarray, y: np.ndarray, squared: bool = True, inversed: bool = False):
     """Return the magnitude of the normalized dot product between the two complex arrays."""
     q = np.abs(dot_product(x, y, normalized=True))
     if squared:
