@@ -7,93 +7,87 @@ from transforms import inverse_fourier_transform
 from plots import compare_complex_fields
 
 
-def error_reduction_fourier(magn_plane1, magn_plane2, init = None, max_iter: int = 200, pad: int = 2):
+def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], init = None, max_iter: int = 200, pad: int = 2):
     if init is None:
-        phi_init = 2 * np.pi * np.random.rand(*magn_plane1.shape)
-        y_hat = np.abs(magn_plane1) * np.exp(1j * phi_init)
+        phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
+        y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
+    else:
+        y_hat = init
 
     results = {'mse_plane1': [], 'mse_plane2': []}
     for _ in range(max_iter):
-        tf_y_hat = transforms.fourier_transform(y_hat, pad=pad)
-        results['mse_plane2'].append(metrics.mse(tf_y_hat, magn_plane2))
-        tf_y_hat = np.abs(magn_plane2) * np.exp(1j * np.angle(tf_y_hat))
-        y_hat = inverse_fourier_transform(tf_y_hat, pad=pad)
-        results['mse_plane1'].append(metrics.mse(y_hat, magn_plane1))
-        y_hat = np.abs(magn_plane2) * np.exp(1j * np.angle(y_hat))
+        ft_y_hat = transforms.fourier_transform(y_hat, pad=pad)
+        results['mse_plane2'].append(metrics.mse(ft_y_hat, magnitudes[1]))
+        ft_y_hat = np.abs(magnitudes[1]) * np.exp(1j * np.angle(ft_y_hat))
+        y_hat = inverse_fourier_transform(ft_y_hat, pad=pad)
+        results['mse_plane1'].append(metrics.mse(y_hat, magnitudes[0]))
+        y_hat = np.abs(magnitudes[0]) * np.exp(1j * np.angle(y_hat))
 
-    return (y_hat, tf_y_hat, results)
+    return (y_hat, ft_y_hat, results)
 
 
-def hio_fourier(magn_plane1, magn_plane2, init = None, max_iter: int = 200, pad: int = 2):
+def hio_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, init = None, beta: float = 0.99, max_iter: int = 200, pad: int = 2):
     if init is None:
-        phi_init = 2 * np.pi * np.random.rand(*magn_plane1.shape)
-        y_hat = np.abs(magn_plane1) * np.exp(1j * phi_init)
+        phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
+        y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
+    else:
+        y_hat = init
 
-    metrics = {'mse_plane1': [], 'mse_plane2': []}
+    results = {'mse_plane1': [], 'mse_plane2': []}
     for _ in range(max_iter):
-        tf_y_hat = transforms.fourier_transform(y_hat, pad=pad)
-        metrics['mse_plane2'].append(metrics.mse(np.abs(tf_y_hat), np.abs(magn_plane2)))
-        tf_y_hat = np.abs(magn_plane2) * np.exp(1j * np.angle(tf_y_hat))
-        y_hat = transforms.inverse_fourier_transform(tf_y_hat, pad=pad)
-        metrics['mse_plane1'].append(metrics.mse(np.abs(y_hat), magn_plane1))
-        y_hat = np.abs(magn_plane2) * np.exp(1j * np.angle(y_hat))
+        ft_y_hat = transforms.fourier_transform(y_hat, pad=pad)
+        results['mse_plane2'].append(metrics.mse(ft_y_hat, magnitudes[1]))
+        ft_y_hat = np.abs(magnitudes[1]) * np.exp(1j * np.angle(ft_y_hat))
 
-    return (y_hat, tf_y_hat, metrics)
+        y_hat_tmp = inverse_fourier_transform(ft_y_hat, pad=pad)
+        results['mse_plane1'].append(metrics.mse(y_hat_tmp, magnitudes[0]))
+        y_hat[support] = np.abs(magnitudes[0][support]) * np.exp(1j * np.angle(y_hat_tmp[support]))
+        y_hat[np.logical_not(support)] = y_hat[np.logical_not(support)] - beta * np.abs(magnitudes[0][np.logical_not(support)]) * np.exp(1j * np.angle(y_hat_tmp[np.logical_not(support)]))
 
-
-
-# phi_init = 2 * np.pi * np.random.rand(*field.shape)
-# y_hat = np.abs(field) * np.exp(1j * phi_init)
-# tff_y_noref = fourier_transform(field, pad=2)
-# hio_beta = 0.99
-# hio_iter = 150
-# er_iter = 200
-
-# grid = np.arange(start=0, stop=y_hat.shape[0]) - y_hat.shape[0] / 2
-# X, Y = np.meshgrid(grid, grid)
-# R = np.sqrt(np.square(X) + np.square(Y))
-
-# support_radius = 50
-# support = np.zeros(y_hat.shape, dtype=bool)
-# support[R <= support_radius] = True
-
-# image_loss = []
-# fresnel_loss = []
-# for i in range(1):
-
-#     for j in range(hio_iter):
-#         tff_y_hat = fourier_transform(y_hat, pad=2)
-#         fresnel_loss.append(mse(tff_y_hat, tff_y_noref))
-#         tff_y_hat = np.abs(tff_y_noref) * np.exp(1j * np.angle(tff_y_hat))
-#         y_hat_tmp = inverse_fourier_transform(tff_y_hat, pad=2)
-#         image_loss.append(mse(y_hat_tmp, field))
-#         y_hat[support] = np.abs(field[support]) * np.exp(1j * np.angle(y_hat_tmp[support]))
-#         y_hat[np.logical_not(support)] = y_hat[np.logical_not(support)] - hio_beta * np.abs(field[np.logical_not(support)]) * np.exp(1j * np.angle(y_hat_tmp[np.logical_not(support)]))
-#         image_loss.append(mse(y_hat, field))
-
-#     for j in range(er_iter):
-#         tff_y_hat = fourier_transform(y_hat, pad=2)
-#         fresnel_loss.append(mse(tff_y_hat, tff_y_noref))
-#         tff_y_hat = np.abs(tff_y_noref) * np.exp(1j * np.angle(tff_y_hat))
-#         y_hat = inverse_fourier_transform(tff_y_hat, pad=2)
-#         image_loss.append(mse(y_hat, field))
-#         y_hat = np.abs(field) * np.exp(1j * np.angle(y_hat))
-#         # y_hat[np.logical_not(support)] = 0 
+    return (y_hat, ft_y_hat, results)
 
 
-# plt.figure()
-# # plt.plot(image_loss, label='Image MSE')
-# plt.plot(fresnel_loss, label='Fourier MSE')
-# plt.title('MSE')
-# plt.xlabel('Iteration #')
-# plt.yscale('log')
+def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, max_iter: int = 3, init = None, beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
+    if init is None:
+        phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
+        y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
+    else:
+        y_hat = init
+
+    results = {'mse_plane1': [], 'mse_plane2': []}
+    for iter in range(max_iter):
+        y_hat, ft_hat, res = hio_fourier(magnitudes, support, init=y_hat, pad=pad, max_iter=max_hio_iter)
+        results = append_dict_keys_values(results, res)
+        y_hat, ft_hat, res = error_reduction_fourier(magnitudes, init=y_hat, pad=pad, max_iter=max_er_iter)
+        results = append_dict_keys_values(results, res)
+        print(f"{iter + 1} / {max_iter}")
+
+    return (y_hat, ft_hat, results)
+
+
+def append_dict_keys_values(dict1: dict, dict2: dict):
+    for key in dict1.keys():
+        if key in dict2.keys():
+            dict1[key] = dict1[key] + dict2[key]
+    return dict1
 
 
 if __name__ == "__main__":
     field = np.random.randn(20, 20) + 1j * np.random.randn(20, 20)
     tf = transforms.fourier_transform(field, pad=2)
 
-    y_hat, tf_hat, results = error_reduction_fourier(np.abs(field), np.abs(tf), pad=1, max_iter=100)
+
+    grid = np.arange(start=0, stop=field.shape[0]) - field.shape[0] / 2
+    X, Y = np.meshgrid(grid, grid)
+    R = np.sqrt(np.square(X) + np.square(Y))
+
+    support_radius = 5
+    support = np.zeros(field.shape, dtype=bool)
+    support[R <= support_radius] = True
+
+    # y_hat, tf_hat, results = error_reduction_fourier((np.abs(field), np.abs(tf)), pad=1, max_iter=100)
+    # y_hat, tf_hat, results = hio_fourier((np.abs(field), np.abs(tf)), support, pad=1, max_iter=100)
+    y_hat, tf_hat, results = hio_er_fourier((np.abs(field), np.abs(tf)), support, pad=1, max_iter=3)
 
     plt.figure()
     plt.plot(results['mse_plane2'], label='Fourier MSE')
