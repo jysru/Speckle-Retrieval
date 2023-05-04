@@ -87,6 +87,24 @@ def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarra
     return (y_hat, ft_hat, results)
 
 
+def hio_gs_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, max_iter: int = 3, init = None, beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
+    if init is None:
+        phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
+        y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
+    else:
+        y_hat = init
+
+    results = {'mse_plane1': [], 'mse_plane2': []}
+    for iter in range(max_iter):
+        y_hat, ft_hat, res = hio_fourier(magnitudes, support, init=y_hat, pad=pad, max_iter=max_hio_iter)
+        results = append_dict_keys_values(results, res)
+        y_hat, ft_hat, res = gerchberg_saxton_fourier(magnitudes, init=y_hat, pad=pad, max_iter=max_er_iter)
+        results = append_dict_keys_values(results, res)
+        print(f"{iter + 1} / {max_iter}")
+
+    return (y_hat, ft_hat, results)
+
+
 def append_dict_keys_values(dict1: dict, dict2: dict):
     for key in dict1.keys():
         if key in dict2.keys():
@@ -100,15 +118,15 @@ if __name__ == "__main__":
     field = np.random.randn(sz, sz) + 1j * np.random.randn(sz, sz)
     
     field = np.ones(field.shape) * np.exp(-np.square(R/15))
-    field = field * np.exp(1j * (np.power(X/10, 3) + np.power(Y/10, 3)))
+    field = field * np.exp(1j * (np.power(X/10, 2) + np.power(Y/10, 2)))
     field = transforms.pad_img(field, pad=3)
 
     ft = transforms.fourier_transform(field, pad=None)
     support = supports.disk_support(field, radius=40)
 
     # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), support=support, pad=2, max_iter=500)
-    y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=None, max_iter=500, beta=0.8)
-    # y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, pad=None, max_iter=3, max_er_iter=150, max_hio_iter=150)
+    # y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=None, max_iter=500, beta=0.8)
+    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, pad=None, max_iter=3, max_er_iter=150, max_hio_iter=150)
     print(metrics.quality(y_hat[support], field[support]))
 
     plt.figure()
