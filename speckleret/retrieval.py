@@ -7,7 +7,7 @@ import speckleret.plots as plots
 import speckleret.supports as supports
 
 
-def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], init = None, max_iter: int = 200, pad: int = 2):
+def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support = None, init = None, max_iter: int = 200, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -22,6 +22,8 @@ def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], init = No
         y_hat = transforms.inverse_fourier_transform(ft_y_hat, pad=pad)
         results['mse_plane1'].append(metrics.mse(y_hat, magnitudes[0]))
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * np.angle(y_hat))
+        if support is not None:
+            y_hat[np.logical_not(support)] = 0
 
     return (y_hat, ft_y_hat, results)
 
@@ -73,19 +75,20 @@ def append_dict_keys_values(dict1: dict, dict2: dict):
 
 
 if __name__ == "__main__":
-    sz = 200
+    sz = 50
     X, Y, R, _ = supports.pixels_meshgrids(sz)
     field = np.random.randn(sz, sz) + 1j * np.random.randn(sz, sz)
     
-    field = np.ones(field.shape) * np.exp(-np.square(R/20))
+    field = np.ones(field.shape) * np.exp(-np.square(R/15))
     field = field * np.exp(1j * (np.power(X/10, 3) + np.power(Y/10, 3)))
 
     ft = transforms.fourier_transform(field, pad=2)
-    support = supports.disk_support(field, radius=10)
+    support = supports.disk_support(field, radius=15)
 
-    # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), pad=2, max_iter=20)
+    # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), support=support, pad=2, max_iter=20)
     # y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=100)
-    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, pad=1, max_iter=10, max_er_iter=100, max_hio_iter=10)
+    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=10, max_er_iter=150, max_hio_iter=100)
+    print(metrics.quality(y_hat[support], field[support]))
 
     plt.figure()
     plt.plot(results['mse_plane2'], label='Fourier MSE')
