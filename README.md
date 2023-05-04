@@ -1,8 +1,5 @@
 # Speckle-Retrieval
 
-
-# Fiber LP modes
-
 Phase retrieval from GRIN fibers speckled optical fields.
 
 
