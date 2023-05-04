@@ -49,7 +49,7 @@ def hio_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, 
     return (y_hat, ft_y_hat, results)
 
 
-def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, max_iter: int = 3, init = None, beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
+def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, support_on_er: bool = False, max_iter: int = 3, init = None, beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -60,7 +60,10 @@ def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarra
     for iter in range(max_iter):
         y_hat, ft_hat, res = hio_fourier(magnitudes, support, init=y_hat, pad=pad, max_iter=max_hio_iter)
         results = append_dict_keys_values(results, res)
-        y_hat, ft_hat, res = error_reduction_fourier(magnitudes, init=y_hat, pad=pad, max_iter=max_er_iter)
+        if support_on_er:
+            y_hat, ft_hat, res = error_reduction_fourier(magnitudes, support=support, init=y_hat, pad=pad, max_iter=max_er_iter)
+        else:
+            y_hat, ft_hat, res = error_reduction_fourier(magnitudes, init=y_hat, pad=pad, max_iter=max_er_iter)
         results = append_dict_keys_values(results, res)
         print(f"{iter + 1} / {max_iter}")
 
@@ -85,7 +88,7 @@ if __name__ == "__main__":
     ft = transforms.fourier_transform(field, pad=2)
     support = supports.disk_support(field, radius=15)
 
-    # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), support=support, pad=2, max_iter=20)
+    # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), support=support, pad=2, max_iter=200)
     # y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=100)
     y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=10, max_er_iter=150, max_hio_iter=100)
     print(metrics.quality(y_hat[support], field[support]))
