@@ -34,7 +34,7 @@ def complex_imshow(field, figsize: tuple[int,int] = (15,5), remove_ticks: bool =
     return (fig, axs, pls)
 
 
-def compare_arrays(array1, array2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False, remove_colorbars: bool = False, intensity: bool = False):
+def compare_arrays(array1, array2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False, remove_colorbars: bool = False, intensity: bool = False, cmap: str = 'gray'):
     if np.iscomplexobj(array1):
         array1 = np.abs(array1)
     if np.iscomplexobj(array2):
@@ -44,11 +44,11 @@ def compare_arrays(array1, array2, figsize: tuple[int,int] = (15,5), remove_tick
         array1 = np.square(array1)
         array2 = np.square(array2)
     else:
-        title_base_str = "IAmplitude"
+        title_base_str = "Amplitude"
 
     fig, axs = plt.subplots(1, 2, figsize=figsize)
-    pl0 = axs[0].imshow(array1, cmap='gray')
-    pl1 = axs[1].imshow(array2, cmap='gray')
+    pl0 = axs[0].imshow(array1, cmap=cmap)
+    pl1 = axs[1].imshow(array2, cmap=cmap)
     pls = [pl0, pl1]
 
     _ = axs[0].set_title(title_base_str + " 1")
