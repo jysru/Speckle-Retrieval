@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.ndimage.filters import gaussian_filter
 
 
 def pixels_meshgrids(size: int, center: bool = True, return_polar: bool = True):
@@ -41,6 +42,15 @@ def disk_support(array: np.ndarray, radius: int, offsets: tuple[float, float] = 
         support[np.sqrt(np.square(X - offsets[0]) + np.square(Y - offsets[1])) <= radius] = True
     return support
 
+
+def shrinkwrap(field, filter_sigma: float = 1, threshold: float = 0.03):
+    # https://www.youtube.com/watch?v=8rJYhRMVvQw&t=1742s (0:40)
+    density = np.square(np.abs(field) / np.max(np.abs(field)))
+    smeared = gaussian_filter(density, sigma=filter_sigma)
+
+    support = np.zeros(field.shape, dtype=bool)
+    support[smeared >= threshold] = True
+    return support
 
 
 if __name__ == "__main__":
