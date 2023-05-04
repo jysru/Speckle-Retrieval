@@ -34,6 +34,15 @@ def complex_imshow(field, figsize: tuple[int,int] = (15,5), remove_ticks: bool =
     return (fig, axs, pls)
 
 
+def rgb_imshow(r: np.ndarray, g: np.ndarray, b: np.ndarray):
+    fig, axs = plt.figure()
+    r = np.abs(r) / np.max(np.abs(r))
+    g = np.abs(g) / np.max(np.abs(g))
+    b = np.abs(b) / np.max(np.abs(b))
+    axs.imshow(np.dstack((r, g, b)))
+    return (fig, axs)
+
+
 def compare_arrays(array1, array2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False, remove_colorbars: bool = False, intensity: bool = False, cmap: str = 'gray'):
     if np.iscomplexobj(array1):
         array1 = np.abs(array1)
