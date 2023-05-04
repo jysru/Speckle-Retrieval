@@ -15,6 +15,11 @@ $ pip install -e .
 ```
 
 
+## Example
+
+Check `./notebooks/example.ipynb` for basic speckle phase retrieval.
+
+
 ## Notes
 
 - Tested with Python 3.9.
