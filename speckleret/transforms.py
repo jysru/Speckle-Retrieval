@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from plots import compare_complex_fields
+from speckleret.plots import compare_complex_fields
 
 
 def crop_img(img: np.ndarray, newsize: tuple[int, int]):

@@ -1,10 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-import lib.transforms as transforms
-import lib.metrics as metrics
-from transforms import inverse_fourier_transform
-from plots import compare_complex_fields
+import speckleret.transforms as transforms
+import speckleret.metrics as metrics
+import speckleret.plots as plots
 
 
 def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], init = None, max_iter: int = 200, pad: int = 2):
@@ -19,7 +18,7 @@ def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], init = No
         ft_y_hat = transforms.fourier_transform(y_hat, pad=pad)
         results['mse_plane2'].append(metrics.mse(ft_y_hat, magnitudes[1]))
         ft_y_hat = np.abs(magnitudes[1]) * np.exp(1j * np.angle(ft_y_hat))
-        y_hat = inverse_fourier_transform(ft_y_hat, pad=pad)
+        y_hat = transforms.inverse_fourier_transform(ft_y_hat, pad=pad)
         results['mse_plane1'].append(metrics.mse(y_hat, magnitudes[0]))
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * np.angle(y_hat))
 
@@ -39,7 +38,7 @@ def hio_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, 
         results['mse_plane2'].append(metrics.mse(ft_y_hat, magnitudes[1]))
         ft_y_hat = np.abs(magnitudes[1]) * np.exp(1j * np.angle(ft_y_hat))
 
-        y_hat_tmp = inverse_fourier_transform(ft_y_hat, pad=pad)
+        y_hat_tmp = transforms.inverse_fourier_transform(ft_y_hat, pad=pad)
         results['mse_plane1'].append(metrics.mse(y_hat_tmp, magnitudes[0]))
         y_hat[support] = np.abs(magnitudes[0][support]) * np.exp(1j * np.angle(y_hat_tmp[support]))
         y_hat[np.logical_not(support)] = y_hat[np.logical_not(support)] - beta * np.abs(magnitudes[0][np.logical_not(support)]) * np.exp(1j * np.angle(y_hat_tmp[np.logical_not(support)]))
@@ -87,8 +86,9 @@ if __name__ == "__main__":
     field = field1 + field2
 
     ft = transforms.fourier_transform(field, pad=2)
+    # compare_complex_fields(field, ft)
 
-    support_radius = 60
+    support_radius = 10
     support = np.zeros(field.shape, dtype=bool)
     support[R <= support_radius] = True
 
@@ -103,6 +103,6 @@ if __name__ == "__main__":
     plt.yscale('log')
 
 
-    compare_complex_fields(field, y_hat)
-    # compare_complex_fields(ft, ft_hat)
+    plots.compare_complex_fields(field, y_hat)
+    plots.compare_complex_fields(ft, ft_hat)
     plt.show()
