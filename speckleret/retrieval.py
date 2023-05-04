@@ -7,7 +7,8 @@ import speckleret.plots as plots
 import speckleret.supports as supports
 
 
-def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support = None, init = None, max_iter: int = 200, pad: int = 2):
+
+def gerchberg_saxton_fourier(magnitudes: tuple[np.ndarray, np.ndarray], init = None, max_iter: int = 200, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -22,8 +23,26 @@ def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support =
         y_hat = transforms.inverse_fourier_transform(ft_y_hat, pad=pad)
         results['mse_plane1'].append(metrics.mse(y_hat, magnitudes[0]))
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * np.angle(y_hat))
-        if support is not None:
-            y_hat[np.logical_not(support)] = 0
+
+    return (y_hat, ft_y_hat, results)
+
+
+def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, init = None, max_iter: int = 200, pad: int = 2):
+    if init is None:
+        phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
+        y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
+    else:
+        y_hat = init
+
+    results = {'mse_plane1': [], 'mse_plane2': []}
+    for _ in range(max_iter):
+        ft_y_hat = transforms.fourier_transform(y_hat, pad=pad)
+        results['mse_plane2'].append(metrics.mse(ft_y_hat, magnitudes[1]))
+        ft_y_hat = np.abs(magnitudes[1]) * np.exp(1j * np.angle(ft_y_hat))
+        y_hat = transforms.inverse_fourier_transform(ft_y_hat, pad=pad)
+        results['mse_plane1'].append(metrics.mse(y_hat, magnitudes[0]))
+        y_hat = np.abs(magnitudes[0]) * np.exp(1j * np.angle(y_hat))
+        y_hat[np.logical_not(support)] = 0
 
     return (y_hat, ft_y_hat, results)
 
@@ -50,7 +69,7 @@ def hio_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, 
     return (y_hat, ft_y_hat, results)
 
 
-def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, support_on_er: bool = False, max_iter: int = 3, init = None, beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
+def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, max_iter: int = 3, init = None, beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -61,10 +80,7 @@ def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarra
     for iter in range(max_iter):
         y_hat, ft_hat, res = hio_fourier(magnitudes, support, init=y_hat, pad=pad, max_iter=max_hio_iter)
         results = append_dict_keys_values(results, res)
-        if support_on_er:
-            y_hat, ft_hat, res = error_reduction_fourier(magnitudes, support=support, init=y_hat, pad=pad, max_iter=max_er_iter)
-        else:
-            y_hat, ft_hat, res = error_reduction_fourier(magnitudes, init=y_hat, pad=pad, max_iter=max_er_iter)
+        y_hat, ft_hat, res = error_reduction_fourier(magnitudes, support=support, init=y_hat, pad=pad, max_iter=max_er_iter)
         results = append_dict_keys_values(results, res)
         print(f"{iter + 1} / {max_iter}")
 
@@ -91,8 +107,8 @@ if __name__ == "__main__":
     support = supports.disk_support(field, radius=40)
 
     # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), support=support, pad=2, max_iter=500)
-    # y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=None, max_iter=500, beta=0.99)
-    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, support_on_er=True, pad=None, max_iter=3, max_er_iter=150, max_hio_iter=150)
+    y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=None, max_iter=500, beta=0.8)
+    # y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, pad=None, max_iter=3, max_er_iter=150, max_hio_iter=150)
     print(metrics.quality(y_hat[support], field[support]))
 
     plt.figure()
