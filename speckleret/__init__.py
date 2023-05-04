@@ -4,5 +4,6 @@ from . import retrieval
 from . import supports
 from . import transforms
 from . import noise
+from . import filter
 
 __version__ = "0.1"
