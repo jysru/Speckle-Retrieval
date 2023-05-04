@@ -85,13 +85,14 @@ if __name__ == "__main__":
     
     field = np.ones(field.shape) * np.exp(-np.square(R/15))
     field = field * np.exp(1j * (np.power(X/10, 3) + np.power(Y/10, 3)))
+    field = transforms.pad_img(field, pad=3)
 
-    ft = transforms.fourier_transform(field, pad=2)
-    support = supports.disk_support(field, radius=22)
+    ft = transforms.fourier_transform(field, pad=None)
+    support = supports.disk_support(field, radius=40)
 
     # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), support=support, pad=2, max_iter=500)
-    # y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=400, beta=0.999)
-    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, support_on_er=True, pad=2, max_iter=3, max_er_iter=150, max_hio_iter=150)
+    # y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=None, max_iter=500, beta=0.99)
+    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, support_on_er=True, pad=None, max_iter=3, max_er_iter=150, max_hio_iter=150)
     print(metrics.quality(y_hat[support], field[support]))
 
     plt.figure()
