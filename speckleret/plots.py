@@ -34,6 +34,37 @@ def complex_imshow(field, figsize: tuple[int,int] = (15,5), remove_ticks: bool =
     return (fig, axs, pls)
 
 
+def compare_arrays(array1, array2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False, remove_colorbars: bool = False, intensity: bool = False):
+    if np.iscomplexobj(array1):
+        array1 = np.abs(array1)
+    if np.iscomplexobj(array2):
+        array2 = np.abs(array2)
+    if intensity:
+        title_base_str = "Intensity"
+        array1 = np.square(array1)
+        array2 = np.square(array2)
+    else:
+        title_base_str = "IAmplitude"
+
+    fig, axs = plt.subplots(1, 2, figsize=figsize)
+    pl0 = axs[0].imshow(array1, cmap='gray')
+    pl1 = axs[1].imshow(array2, cmap='gray')
+    pls = [pl0, pl1]
+
+    _ = axs[0].set_title(title_base_str + " 1")
+    _ = axs[1].set_title(title_base_str + " 2")
+
+    if not remove_colorbars:
+        plt.colorbar(pl0, ax=axs[0])
+        plt.colorbar(pl1, ax=axs[1])
+
+    if remove_ticks:
+        _ = [axs[i].set_xticks([]) for i in range(len(axs))]
+        _ = [axs[i].set_yticks([]) for i in range(len(axs))]
+
+    return (fig, axs, pls)
+
+
 def compare_complex_fields(field1, field2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False):
     ref1, ref2 = list(map(int, field1.shape)), list(map(int, field2.shape))
 
