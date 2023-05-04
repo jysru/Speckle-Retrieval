@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import speckleret.transforms as transforms
 import speckleret.metrics as metrics
 import speckleret.plots as plots
+import speckleret.supports as supports
 
 
 def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], init = None, max_iter: int = 200, pad: int = 2):
@@ -73,35 +74,24 @@ def append_dict_keys_values(dict1: dict, dict2: dict):
 
 if __name__ == "__main__":
     sz = 200
+    X, Y, R, _ = supports.pixels_meshgrids(sz)
     field = np.random.randn(sz, sz) + 1j * np.random.randn(sz, sz)
-
-    grid = np.arange(start=0, stop=field.shape[0]) - field.shape[0] / 2
-    X, Y = np.meshgrid(grid, grid)
-    R = np.sqrt(np.square(X) + np.square(Y))
-
-    field1 = np.ones(field.shape) * np.exp(-np.square(R/20))
-    field1 = field1 * np.exp(1j * (np.power(X/10, 3) + np.power(Y/10, 3)))
-    field2 = np.ones(field.shape) * np.exp(-np.square(R/10))
-    field2 = field2 * np.exp(1j * (np.square(X/3) + np.square(Y/3)))
-    field = field1 + field2
+    
+    field = np.ones(field.shape) * np.exp(-np.square(R/20))
+    field = field * np.exp(1j * (np.power(X/10, 3) + np.power(Y/10, 3)))
 
     ft = transforms.fourier_transform(field, pad=2)
-    # compare_complex_fields(field, ft)
+    support = supports.disk_support(field, radius=10)
 
-    support_radius = 10
-    support = np.zeros(field.shape, dtype=bool)
-    support[R <= support_radius] = True
-
-    # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), pad=2, max_iter=100)
+    # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), pad=2, max_iter=20)
     # y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=100)
-    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=5, max_er_iter=200, max_hio_iter=100)
+    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, pad=1, max_iter=10, max_er_iter=100, max_hio_iter=10)
 
     plt.figure()
     plt.plot(results['mse_plane2'], label='Fourier MSE')
     plt.title('MSE')
     plt.xlabel('Iteration #')
     plt.yscale('log')
-
 
     plots.compare_complex_fields(field, y_hat)
     plots.compare_complex_fields(ft, ft_hat)

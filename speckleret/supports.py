@@ -6,7 +6,6 @@ def pixels_meshgrids(size: int, center: bool = True, return_polar: bool = True):
     grid = np.arange(start=0, stop=size)
     if center:
         grid = grid - float(size) / 2 + 0.5
-    print(grid)
     X, Y = np.meshgrid(grid, grid)
 
     if return_polar:
