@@ -60,6 +60,40 @@ def compare_complex_fields(field1, field2, figsize: tuple[int,int] = (15,5), rem
     return (fig, axs, pls)
 
 
+def compare_complex_planes(field1, field2, field3, field4, figsize: tuple[int,int] = (15,8), planes_names: tuple[str, str] = ('Plane 1', 'Plane 2'), remove_ticks: bool = False):
+    ref1, ref2, ref3, ref4 = list(map(int, field1.shape)), list(map(int, field2.shape)), list(map(int, field3.shape)), list(map(int, field4.shape))
+
+    fig, axs = plt.subplots(2, 6, figsize=figsize)
+    pl0 = axs[0,0].imshow(np.abs(field1), cmap='gray')
+    pl1 = axs[0,1].imshow(np.abs(field2), cmap='gray')
+    pl2 = axs[0,2].imshow(np.angle(field1 * np.exp(-1j * np.angle(field1[ref1[0]//2, ref1[1]//2]))), cmap='hsv')
+    pl3 = axs[0,3].imshow(np.angle(field2 * np.exp(-1j * np.angle(field2[ref2[0]//2, ref2[1]//2]))), cmap='hsv')
+    pl4 = axs[0,4].imshow(complex_to_hsv(field1 * np.exp(-1j * np.angle(field1[ref1[0]//2, ref1[1]//2])), rmin=0, rmax=np.max(np.abs(field1))), cmap='gray')
+    pl5 = axs[0,5].imshow(complex_to_hsv(field2 * np.exp(-1j * np.angle(field2[ref2[0]//2, ref2[1]//2])), rmin=0, rmax=np.max(np.abs(field2))), cmap='gray')
+
+    pl6 = axs[0,0].imshow(np.abs(field3), cmap='gray')
+    pl7 = axs[0,1].imshow(np.abs(field4), cmap='gray')
+    pl8 = axs[0,2].imshow(np.angle(field3 * np.exp(-1j * np.angle(field3[ref3[0]//2, ref3[1]//2]))), cmap='hsv')
+    pl9 = axs[0,3].imshow(np.angle(field4 * np.exp(-1j * np.angle(field4[ref4[0]//2, ref4[1]//2]))), cmap='hsv')
+    pl10 = axs[0,4].imshow(complex_to_hsv(field3 * np.exp(-1j * np.angle(field3[ref3[0]//2, ref3[1]//2])), rmin=0, rmax=np.max(np.abs(field3))), cmap='gray')
+    pl11 = axs[0,5].imshow(complex_to_hsv(field4 * np.exp(-1j * np.angle(field4[ref4[0]//2, ref4[1]//2])), rmin=0, rmax=np.max(np.abs(field4))), cmap='gray')
+
+    pls = [pl0, pl1, pl2, pl3, pl4, pl5, pl6, pl7, pl8, pl9, pl10, pl11]
+
+    for j in range(len(axs)):
+        _ = axs[j,0].set_title("Amplitude 1" + "\n" + planes_names[j])
+        _ = axs[j,1].set_title("Amplitude 2" + "\n" + planes_names[j])
+        _ = axs[j,2].set_title("Phase 1" + "\n" + planes_names[j])
+        _ = axs[j,3].set_title("Phase 2" + "\n" + planes_names[j])
+        _ = axs[j,4].set_title("Complex field 1" + "\n" + planes_names[j])
+        _ = axs[j,5].set_title("Complex field 2" + "\n" + planes_names[j])
+
+    if remove_ticks:
+        _ = [axs[j,i].set_xticks([]) for i in range(len(axs[0])) for j in range(len(axs))]
+        _ = [axs[j,i].set_yticks([]) for i in range(len(axs[0])) for j in range(len(axs))]
+
+    return (fig, axs, pls)
+
 
 if __name__ == "__main__":
     field1 = np.random.randn(20, 20) + 1j * np.random.randn(20, 20)
