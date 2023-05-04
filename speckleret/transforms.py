@@ -33,7 +33,7 @@ def fresnel_transform(field: np.ndarray, dz: float = 0.0, pad: float = 2, wavele
         init_shape = field.shape
         field = pad_img(field, pad)
     
-    kx, ky = fourier_grids(field, pixel_size=pixel_size)
+    _, _, kx, ky = fourier_grids(field, pixel_size=pixel_size)
 
     ft = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(field)))
     propagator = dz * np.sqrt(4 * np.square(np.pi/wavelength) - np.square(kx) - np.square(ky))
@@ -49,14 +49,14 @@ def fourier_grids(field: np.ndarray, pixel_size: float):
     grid_size = dx * (n_pts - 1)
     lim_x = n_pts / 2 * dx
     x = np.arange(-lim_x, lim_x, dx)
-    x, y = np.meshgrid(x,x)
+    x, y = np.meshgrid(x, x)
 
     # Conjugate plane
     dnx = 1 / grid_size
     lim_nx = (n_pts / 2) * dnx
     kx = 2 * np.pi * np.arange(-lim_nx, lim_nx, dnx)
     kx, ky = np.meshgrid(kx, kx)
-    return (kx, ky)
+    return (x, y, kx, ky)
 
 
 def inverse_fourier_transform(field: np.ndarray, pad: float = None):
@@ -65,6 +65,7 @@ def inverse_fourier_transform(field: np.ndarray, pad: float = None):
         field = pad_img(field, pad)
         
     ift = np.fft.ifftshift(np.fft.ifft2(np.fft.ifftshift(field)))
+    ift = ift * np.sqrt(ift.size)
     return crop_img(ift, init_shape) if pad is not None else ift
 
 
