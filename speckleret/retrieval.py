@@ -43,8 +43,9 @@ def hio_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, 
 
         y_hat_tmp = transforms.inverse_fourier_transform(ft_y_hat, pad=pad)
         results['mse_plane1'].append(metrics.mse(y_hat_tmp, magnitudes[0]))
-        y_hat[support] = np.abs(magnitudes[0][support]) * np.exp(1j * np.angle(y_hat_tmp[support]))
-        y_hat[np.logical_not(support)] = y_hat[np.logical_not(support)] - beta * np.abs(magnitudes[0][np.logical_not(support)]) * np.exp(1j * np.angle(y_hat_tmp[np.logical_not(support)]))
+        y_hat_tmp = np.abs(magnitudes[0]) * np.exp(1j * np.angle(y_hat_tmp))
+        y_hat[np.logical_not(support)] = y_hat[np.logical_not(support)] - beta * y_hat[np.logical_not(support)]
+        y_hat[support] = y_hat_tmp[support]
 
     return (y_hat, ft_y_hat, results)
 
@@ -86,11 +87,11 @@ if __name__ == "__main__":
     field = field * np.exp(1j * (np.power(X/10, 3) + np.power(Y/10, 3)))
 
     ft = transforms.fourier_transform(field, pad=2)
-    support = supports.disk_support(field, radius=15)
+    support = supports.disk_support(field, radius=22)
 
-    # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), support=support, pad=2, max_iter=200)
-    # y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=100)
-    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=10, max_er_iter=150, max_hio_iter=100)
+    # y_hat, ft_hat, results = error_reduction_fourier((np.abs(field), np.abs(ft)), support=support, pad=2, max_iter=500)
+    # y_hat, ft_hat, results = hio_fourier((np.abs(field), np.abs(ft)), support, pad=2, max_iter=400, beta=0.999)
+    y_hat, ft_hat, results = hio_er_fourier((np.abs(field), np.abs(ft)), support, support_on_er=True, pad=2, max_iter=3, max_er_iter=150, max_hio_iter=150)
     print(metrics.quality(y_hat[support], field[support]))
 
     plt.figure()
