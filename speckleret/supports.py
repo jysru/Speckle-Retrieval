@@ -16,6 +16,12 @@ def pixels_meshgrids(size: int, center: bool = True, return_polar: bool = True):
         return (X, Y)
     
 
+def threshold_support(array: np.ndarray, threshold: float = 0.01):
+    support = np.zeros(array.shape, dtype=bool)
+    support[np.square(np.abs(array) / np.max(np.abs(array))) >= threshold] = True
+    return support
+    
+
 def square_support(array: np.ndarray, size: int, offsets: tuple[float, float] = None):
     support = np.zeros(array.shape, dtype=bool)
     X, Y = pixels_meshgrids(array.shape[0], center=True, return_polar=False)
