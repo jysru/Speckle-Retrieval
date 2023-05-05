@@ -8,7 +8,8 @@ import speckleret.supports as supports
 
 
 
-def gerchberg_saxton_fourier(magnitudes: tuple[np.ndarray, np.ndarray], init = None, max_iter: int = 200, pad: int = 2):
+def gerchberg_saxton_fourier(magnitudes: tuple[np.ndarray, np.ndarray],
+                             init = None,max_iter: int = 200, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -27,7 +28,9 @@ def gerchberg_saxton_fourier(magnitudes: tuple[np.ndarray, np.ndarray], init = N
     return (y_hat, ft_y_hat, results)
 
 
-def gerchberg_saxton_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], dz: float, wavelength: float = 1064e-9, pixel_size: float=5.04e-6, init = None, max_iter: int = 200, pad: int = 2):
+def gerchberg_saxton_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], 
+                             dz: float, wavelength: float = 1064e-9, pixel_size: float=5.04e-6,
+                             init = None, max_iter: int = 200, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -46,7 +49,8 @@ def gerchberg_saxton_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], dz: floa
     return (y_hat, ft_y_hat, results)
 
 
-def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, init = None, max_iter: int = 200, pad: int = 2):
+def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray,
+                            init = None, max_iter: int = 200, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -66,7 +70,9 @@ def error_reduction_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: 
     return (y_hat, ft_y_hat, results)
 
 
-def error_reduction_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, dz: float, wavelength: float = 1064e-9, pixel_size: float=5.04e-6, init = None, max_iter: int = 200, pad: int = 2):
+def error_reduction_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray,
+                            dz: float, wavelength: float = 1064e-9, pixel_size: float=5.04e-6,
+                            init = None, max_iter: int = 200, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -86,7 +92,8 @@ def error_reduction_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: 
     return (y_hat, ft_y_hat, results)
 
 
-def hio_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, init = None, beta: float = 0.99, max_iter: int = 200, pad: int = 2):
+def hio_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray,
+                init = None, beta: float = 0.99, max_iter: int = 200, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -108,7 +115,9 @@ def hio_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, 
     return (y_hat, ft_y_hat, results)
 
 
-def hio_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, dz: float, wavelength: float = 1064e-9, pixel_size: float=5.04e-6, init = None, beta: float = 0.99, max_iter: int = 200, pad: int = 2):
+def hio_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray,
+                dz: float, wavelength: float = 1064e-9, pixel_size: float=5.04e-6,
+                init = None, beta: float = 0.99, max_iter: int = 200, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -130,7 +139,10 @@ def hio_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, 
     return (y_hat, ft_y_hat, results)
 
 
-def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, max_iter: int = 3, init = None, beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
+def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray,
+                   max_iter: int = 3, init = None,
+                   beta: float = 0.99,
+                   max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -148,7 +160,10 @@ def hio_er_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarra
     return (y_hat, ft_hat, results)
 
 
-def hio_er_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, dz: float, wavelength: float = 1064e-9, pixel_size: float=5.04e-6, max_iter: int = 3, init = None, beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
+def hio_er_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, 
+                   dz: float, wavelength: float = 1064e-9, pixel_size: float=5.04e-6,
+                   max_iter: int = 3, init = None,
+                   beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -166,7 +181,10 @@ def hio_er_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarra
     return (y_hat, ft_hat, results)
 
 
-def hio_gs_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, max_iter: int = 3, init = None, beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
+def hio_gs_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray,
+                   max_iter: int = 3, init = None,
+                   beta: float = 0.99,
+                   max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
@@ -184,7 +202,10 @@ def hio_gs_fourier(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarra
     return (y_hat, ft_hat, results)
 
 
-def hio_gs_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray, dz: float, wavelength: float = 1064e-9, pixel_size: float=5.04e-6, max_iter: int = 3, init = None, beta: float = 0.99, max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
+def hio_gs_fresnel(magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray,
+                   dz: float, wavelength: float = 1064e-9, pixel_size: float=5.04e-6,
+                   max_iter: int = 3, init = None, beta: float = 0.99,
+                   max_er_iter: int = 200, max_hio_iter: int = 100, pad: int = 2):
     if init is None:
         phi_init = 2 * np.pi * np.random.rand(*magnitudes[0].shape)
         y_hat = np.abs(magnitudes[0]) * np.exp(1j * phi_init)
