@@ -41,7 +41,7 @@ def ER(x, magnitude_S, magnitude_M, support):
 
 def SF(x, magnitude_S, magnitude_M, support):
     """Solvent Flipping algorithm iteration"""
-    return P_S(P_M(x, magnitude_M), magnitude_S, support)
+    return R_S(P_M(x, magnitude_M), 1, magnitude_S, support)
 
 
 def HIO(x, magnitude_S, magnitude_M, support, beta):
