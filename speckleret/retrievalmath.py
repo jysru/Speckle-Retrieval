@@ -13,7 +13,8 @@ import speckleret.supports as supports
 def P_S(x, magnitude, support):
     """Support projection"""
     x_new = magnitude * np.exp(1j * np.angle(x))
-    return x_new * support
+    x_new[np.logical_not(support)] = 0
+    return x_new
 
 
 def P_M(x, magnitude):
@@ -28,9 +29,9 @@ def R_M(x, gamma_M, magnitude):
     return (1 + gamma_M) * P_M(x, magnitude) - gamma_M * x
 
 
-def R_S(x, gamma_S, support):
+def R_S(x, gamma_S, magnitude, support):
     """Support reflector"""
-    return (1 + gamma_S) * P_S(x, support) - gamma_S * x
+    return (1 + gamma_S) * P_S(x, magnitude, support) - gamma_S * x
 
 
 def ER(x, magnitude_S, magnitude_M, support):
@@ -43,39 +44,40 @@ def SF(x, magnitude_S, magnitude_M, support):
     return P_S(P_M(x, magnitude_M), magnitude_S, support)
 
 
-def HIO(x, magnitude, support, beta):
+def HIO(x, magnitude_S, magnitude_M, support, beta):
     """Hybrid Input-Output algorithm iteration"""
     x_new = x.copy()
-    proj = P_M(x, magnitude)
+    proj = P_M(x, magnitude_M)
     x_new[support] = proj[support]
-    x_new[np.logical_not(support)] = x_new[np.logical_not(support)] - beta * proj[np.logical_not(support)]
+    x_new[np.logical_not(support)] = x_new[np.logical_not(support)] - beta * P_S(proj, magnitude_S, support)[np.logical_not(support)]
     return x_new
 
 
-def DM(x, beta, gamma_S, gamma_M, magnitude, support):
+def DM(x, beta, gamma_S, gamma_M, magnitude_S, magnitude_M, support):
     """Difference Maps algorithm iteration"""
-    x_PMRS = P_M(R_S(x, gamma_S, support), magnitude)
-    x_PSRM = P_S(R_M(x, gamma_M, magnitude), support)
-    return x + beta * (x_PMRS - x_PSRM)
+    x_PMRS = P_M(R_S(x, gamma_S, magnitude_S, support), magnitude_M)
+    x_PSRM = P_S(R_M(x, gamma_M, magnitude_M), magnitude_S, support)
+    x_new = x + beta * (x_PMRS - x_PSRM)
+    return x_new, x_PSRM
 
 
-def ASR(x, magnitude, support):
+def ASR(x, magnitude_S, magnitude_M, support):
     """Averaged succesive reflections algorithm iteration"""
-    return 0.5 * (R_S(R_M(x, 1, magnitude), 1, support) + x)
+    return 0.5 * (R_S(R_M(x, 1, magnitude_M), 1, magnitude_S, support) + x)
 
 
-def HPR(x, magnitude, support, beta):
+def HPR(x, magnitude_S, magnitude_M, support, beta):
     """Hybrid projection reflection algorithm iteration"""
-    proj = P_M(x, magnitude)
-    x1 = R_S(R_M(x, 1, magnitude) + (beta - 1) * proj, 1, support)
+    proj = P_M(x, magnitude_M)
+    x1 = R_S(R_M(x, 1, magnitude_M) + (beta - 1) * proj, 1, magnitude_S, support)
     x2 = (1 - beta) * proj 
     return 0.5 * (x1 + x + x2)
 
 
-def RAAR(x, magnitude, support, beta):
+def RAAR(x, magnitude_S, magnitude_M, support, beta):
     """Relaxed Averaged Alternating Reflectors algorithm iteration"""
-    proj = P_M(x, magnitude)
-    return beta * ASR(x, magnitude, support)  +  (1 - beta) * proj
+    proj = P_M(x, magnitude_M)
+    return beta * ASR(x, magnitude_S, magnitude_M, support)  +  (1 - beta) * proj
 
 
 
