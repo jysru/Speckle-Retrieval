@@ -60,6 +60,12 @@ def extract_noise_correction(array,
         return mean_noise, array_corr
     else:
         return mean_noise
+    
+
+def bin_image(array, newshape):
+    shape = (newshape[0], array.shape[0] // newshape[0],
+             newshape[1], array.shape[1] // newshape[1])
+    return array.reshape(shape).mean(axis=(-1,1))
 
 
 def calculate_contrast(array, axis=(2,3), square: bool = False):
