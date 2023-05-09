@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.io import loadmat
 import scipy.ndimage
 import skimage
@@ -21,6 +22,44 @@ def get_centroid(array: np.ndarray):
     if np.iscomplexobj(array):
         array = np.abs(array)
     return scipy.ndimage.center_of_mass(array)
+
+
+def extract_noise_correction(array,
+                             averaging_axis: tuple[int, int] = (0,1), mask_trsh: float = 0.02,
+                             plot_mask: bool = False, plot_result: bool = False,
+                             return_corrected_array: bool = False,
+                             ):
+    # Convert to N-dimension matrix for easy computations
+    array = nested_arrays_to_ndarray(array)
+
+    # Compute averages
+    mean_abs = np.mean(array, axis=averaging_axis)
+    mean_abs_norm = mean_abs / np.max(mean_abs)
+
+    # Compute mask and plot
+    mask = make_threshold_mask(np.square(mean_abs_norm), threshold=mask_trsh)
+    if plot_mask:
+        speckleret.plots.rgb_imshow([mean_abs_norm, mask*0.2], normalize_channels=False)
+        plt.title("Average amplitude + Mask")
+        plt.show()
+
+    # Compute noise average and plot result
+    mean_noise = np.mean(np.abs(array) * np.reshape(mask, ((1, 1) + mask.shape)))
+    array_corr = np.abs(array - mean_noise)
+    if plot_result:
+        idx = np.random.randint(low=0, high=array.shape[1]-1)
+        fig, axs = plt.subplots(1, 2, figsize=(14, 5))
+        pl0 = axs[0].imshow(speckleret.transforms.pad_img(array[0, idx, ...], pad=1), cmap='gray')
+        pl1 = axs[1].imshow(speckleret.transforms.pad_img(array_corr[0, idx, ...], pad=1), cmap='gray')
+        axs[0].set_title("Amplitude example")
+        axs[1].set_title("Corrected amplitude example")
+        plt.colorbar(pl0, ax=axs[0])
+        plt.colorbar(pl1, ax=axs[1])
+
+    if return_corrected_array:
+        return mean_noise, array_corr
+    else:
+        return mean_noise
 
 
 def calculate_contrast(array, axis=(2,3), square: bool = False):
