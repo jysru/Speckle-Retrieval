@@ -34,13 +34,36 @@ def complex_imshow(field, figsize: tuple[int,int] = (15,5), remove_ticks: bool =
     return (fig, axs, pls)
 
 
-def rgb_imshow(r: np.ndarray, g: np.ndarray, b: np.ndarray):
-    fig, axs = plt.figure()
-    r = np.abs(r) / np.max(np.abs(r))
-    g = np.abs(g) / np.max(np.abs(g))
-    b = np.abs(b) / np.max(np.abs(b))
-    axs.imshow(np.dstack((r, g, b)))
-    return (fig, axs)
+def rgb_imshow(rgb_list: list[np.ndarray, np.ndarray, np.ndarray] = [None, None, None], normalize_channels: bool = True):
+    # Crop the list if it is longer than the number of available color channels
+    if len(rgb_list) > 3:
+        rgb_list = rgb_list[:3]
+
+    # Append None values if the list is too short
+    if len(rgb_list) < 3:
+        for _ in range(3 - len(rgb_list)):
+            rgb_list.append(None)
+
+    # Check if the list is full of None
+    if all(elem is None for elem in rgb_list):
+        print(f"RGB tuple is empty...")
+        return
+    
+    # Detect non None list indexes and normalize by their maximum value
+    idx_full = [i for i in range(len(rgb_list)) if rgb_list[i] is not None]
+    if normalize_channels:
+        for i in idx_full:
+            rgb_list[i] = rgb_list[i] / np.max(rgb_list[i])
+
+    # Assign zeros to None indexes
+    idx_none = [i for i in range(len(rgb_list)) if rgb_list[i] is None]
+    for i in idx_none:
+        rgb_list[i] = np.zeros(rgb_list[idx_full[0]].shape)
+
+    # RGB imshow from the three first elements in the rgb_list
+    fig = plt.figure()
+    plt.imshow(np.dstack(rgb_list))
+    return fig
 
 
 def compare_arrays(array1, array2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False, remove_colorbars: bool = False, intensity: bool = False, cmap: str = 'gray'):
