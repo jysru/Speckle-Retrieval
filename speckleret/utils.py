@@ -23,6 +23,11 @@ def get_centroid(array: np.ndarray):
     return scipy.ndimage.center_of_mass(array)
 
 
+def calculate_contrast(array, axis=(2,3)):
+    max, min = np.max(array, axis=axis), np.min(array, axis=axis)
+    return (max - min) / (max + min)
+
+
 def make_disk_mask(shape, radius, center: tuple[float, float] = None):
     mask = np.zeros(shape, dtype=bool)
 
