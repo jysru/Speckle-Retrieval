@@ -24,6 +24,8 @@ def get_centroid(array: np.ndarray):
 
 
 def calculate_contrast(array, axis=(2,3)):
+    if np.iscomplexobj(array):
+        array = np.abs(array)
     max, min = np.max(array, axis=axis), np.min(array, axis=axis)
     return (max - min) / (max + min)
 
@@ -50,6 +52,8 @@ def make_threshold_mask(array, threshold: float = 0.01):
 
 
 def calculate_energy_in_mask(intensity, mask):
+    if np.iscomplexobj(intensity):
+        intensity = np.square(np.abs(intensity))
     return np.sum(intensity[mask]) / np.sum(intensity)
 
 
