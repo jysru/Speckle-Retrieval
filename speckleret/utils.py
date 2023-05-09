@@ -5,6 +5,18 @@ import skimage
 import speckleret
 
 
+def nested_arrays_to_ndarray(nested_array, abs_if_complex: bool = True, sqrt_if_real: bool = True):
+    ndarray = np.zeros(shape=(nested_array.shape + nested_array[0, 0].shape))
+
+    for i in range(ndarray.shape[0]):
+        for j in range(ndarray.shape[1]):
+            if np.iscomplexobj(nested_array[i, j]):
+                ndarray[i, j, ...] = np.abs(nested_array[i, j]) if abs_if_complex else nested_array[i, j]
+            else:
+                ndarray[i, j, ...] = np.sqrt(nested_array[i, j]) if sqrt_if_real else nested_array[i, j]
+    return ndarray
+
+
 def get_centroid(array: np.ndarray):
     if np.iscomplexobj(array):
         array = np.abs(array)
