@@ -23,9 +23,11 @@ def get_centroid(array: np.ndarray):
     return scipy.ndimage.center_of_mass(array)
 
 
-def calculate_contrast(array, axis=(2,3)):
+def calculate_contrast(array, axis=(2,3), square: bool = False):
     if np.iscomplexobj(array):
         array = np.abs(array)
+    if square:
+        array = np.square(array)
     max, min = np.max(array, axis=axis), np.min(array, axis=axis)
     return (max - min) / (max + min)
 
