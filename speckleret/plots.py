@@ -97,16 +97,18 @@ def compare_arrays(array1, array2, figsize: tuple[int,int] = (15,5), remove_tick
     return (fig, axs, pls)
 
 
-def compare_complex_fields(field1, field2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False):
-    ref1, ref2 = list(map(int, field1.shape)), list(map(int, field2.shape))
+def compare_complex_fields(field1, field2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False, ref: tuple[int, int] = None):
+    if ref is None:
+        ref = np.argmax(np.abs(field1))
+        ref = np.unravel_index(ref, field1.shape)
 
     fig, axs = plt.subplots(1, 6, figsize=figsize)
     pl0 = axs[0].imshow(np.abs(field1), cmap='gray')
     pl1 = axs[1].imshow(np.abs(field2), cmap='gray')
-    pl2 = axs[2].imshow(np.angle(field1 * np.exp(-1j * np.angle(field1[ref1[0]//2, ref1[1]//2]))), cmap='hsv')
-    pl3 = axs[3].imshow(np.angle(field2 * np.exp(-1j * np.angle(field2[ref2[0]//2, ref2[1]//2]))), cmap='hsv')
-    pl4 = axs[4].imshow(complex_to_hsv(field1 * np.exp(-1j * np.angle(field1[ref1[0]//2, ref1[1]//2])), rmin=0, rmax=np.max(np.abs(field1))), cmap='gray')
-    pl5 = axs[5].imshow(complex_to_hsv(field2 * np.exp(-1j * np.angle(field2[ref2[0]//2, ref2[1]//2])), rmin=0, rmax=np.max(np.abs(field2))), cmap='gray')
+    pl2 = axs[2].imshow(np.angle(field1 * np.exp(-1j * np.angle(field1[ref[0], ref[1]]))), cmap='hsv')
+    pl3 = axs[3].imshow(np.angle(field2 * np.exp(-1j * np.angle(field2[ref[0], ref[1]]))), cmap='hsv')
+    pl4 = axs[4].imshow(complex_to_hsv(field1 * np.exp(-1j * np.angle(field1[ref[0], ref[1]])), rmin=0, rmax=np.max(np.abs(field1))), cmap='gray')
+    pl5 = axs[5].imshow(complex_to_hsv(field2 * np.exp(-1j * np.angle(field2[ref[0], ref[1]])), rmin=0, rmax=np.max(np.abs(field2))), cmap='gray')
     pls = [pl0, pl1, pl2, pl3, pl4, pl5]
 
     _ = axs[0].set_title("Amplitude 1")
