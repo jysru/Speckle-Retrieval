@@ -2,7 +2,7 @@ import numpy as np
 
 
 def flat_phases(magnitude: np.ndarray):
-    phi = np.zeros(*magnitude.shape)
+    phi = np.zeros(shape=magnitude.shape)
     if np.iscomplexobj(magnitude):
         return np.abs(magnitude) * np.exp(1j * phi)
     else:
