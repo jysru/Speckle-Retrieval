@@ -10,7 +10,7 @@ import speckleret.supports as supports
 # Google collab: https://colab.research.google.com/drive/1anePjgg1fKbYrCCmDeRKblobryq-O4Rv
 
 
-def P_S(x, magnitude, support, apply_support: bool = False):
+def P_S(x, magnitude, support, apply_support: bool = True):
     """Support projection"""
     x_new = magnitude * np.exp(1j * np.angle(x))
     if apply_support:
