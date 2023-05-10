@@ -66,6 +66,22 @@ def rgb_imshow(rgb_list: list[np.ndarray, np.ndarray, np.ndarray] = [None, None,
     return fig
 
 
+def phase_difference(field1: np.ndarray, field2: np.ndarray, support: np.ndarray = None, cmap: str = 'gray'):
+    if support is not None:
+        field1[np.logical_not(support)] = np.nan
+        field2[np.logical_not(support)] = np.nan
+    phi_diff = np.angle(np.exp(1j * (np.angle(field1) - np.angle(field2))))
+
+    print(f"Phase error:")
+    print(f"  - Mean: {np.nanmean(phi_diff):3.5f} rad")
+    print(f"  - Std: {np.nanstd(phi_diff):3.5f} rad")
+
+    plt.figure()
+    plt.imshow(phi_diff - np.nanmean(phi_diff), cmap=cmap)
+    plt.colorbar()
+    plt.title("Phase difference")
+
+
 def compare_arrays(array1, array2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False, remove_colorbars: bool = False, intensity: bool = False, cmap: str = 'gray'):
     if np.iscomplexobj(array1):
         array1 = np.abs(array1)
