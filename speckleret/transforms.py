@@ -3,6 +3,12 @@ import matplotlib.pyplot as plt
 from speckleret.plots import compare_complex_fields
 
 
+def apply_support(field: np.ndarray, support: np.ndarray):
+    field = field.copy()
+    field[np.logical_not(support)] = 0
+    return field
+
+
 def crop_img(img: np.ndarray, newsize: tuple[int, int]):
     """ Crop image to new size, from the center."""
     diff_row = img.shape[0] - newsize[0]
