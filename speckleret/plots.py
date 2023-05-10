@@ -67,6 +67,9 @@ def rgb_imshow(rgb_list: list[np.ndarray, np.ndarray, np.ndarray] = [None, None,
 
 
 def phase_difference(field1: np.ndarray, field2: np.ndarray, support: np.ndarray = None, cmap: str = 'hsv'):
+    field1 = field1.copy()
+    field2 = field2.copy()
+    
     if support is not None:
         field1[np.logical_not(support)] = np.nan
         field2[np.logical_not(support)] = np.nan
