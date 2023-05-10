@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 from speckleret.plots import compare_complex_fields
 
 
-def apply_support(field: np.ndarray, support: np.ndarray):
+def apply_mask(field: np.ndarray, mask: np.ndarray):
     field = field.copy()
-    field[np.logical_not(support)] = 0
+    field[np.logical_not(mask)] = 0
     return field
 
 
