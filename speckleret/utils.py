@@ -64,17 +64,28 @@ def extract_noise_correction(array,
 
 def extract_average_centroid(array,
                              averaging_axis: tuple[int, int] = (0,1),
-
+                             from_individuals: bool = False,
+                             return_array: bool = False,
                              ):
     # Convert to N-dimension matrix for easy computations
     array = nested_arrays_to_ndarray(array)
 
-    # Compute averages
-    mean_abs = np.mean(array, axis=averaging_axis)
-    mean_abs_norm = mean_abs / np.max(mean_abs)
+    if from_individuals:
+        k = 0
+        centroids = np.zeros(shape=(np.prod([array.shape[averaging_axis[0]], array.shape[averaging_axis[1]]]), 2)) * np.nan
+        for i in range(array.shape[0]):
+            for j in range(array.shape[1]):
+                centroids[k, :] = np.array(get_centroid(array[i, j, :, :]))
+                k += 1
+        centroids = tuple(np.mean(centroids, axis=(0,)))
+    else:
+        # Compute average image
+        mean_abs = np.mean(array, axis=averaging_axis)
+        mean_abs_norm = mean_abs / np.max(mean_abs)
+        # Return centroids of average image
+        centroids = get_centroid(mean_abs_norm)
 
-    # Return centroids of average image
-    return get_centroid(mean_abs_norm)
+    return np.array(centroids) if return_array else centroids
     
 
 def bin_image(array, newshape):
