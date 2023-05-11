@@ -118,6 +118,22 @@ def run(
     return x, results
 
 
+def report_convergence_results(results: dict, yscale: str = 'log'):
+    if 'quality' in results.keys():
+        print(f"Qualities:\t Last = {1-results['quality'][-1]:3.5f},\t Last_phi = {1-results['quality_phi'][-1]:3.5f}")
+
+    plt.figure()
+    plt.plot(results['mse_fourier'], label='Fourier MSE')
+    if 'quality' in results.keys():
+        plt.plot(results['quality'], label='1 - Q')
+        plt.plot(results['quality_phi'], label='1 - Qphi')
+    plt.yscale(yscale)
+    plt.title('Metrics evolution')
+    plt.xlabel('Iteration')
+    plt.legend()
+
+
+
 if __name__ == "__main__":
     sz = 50
     X, Y, R, _ = supports.pixels_meshgrids(sz)
