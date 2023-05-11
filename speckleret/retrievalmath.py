@@ -5,6 +5,7 @@ import speckleret.transforms as transforms
 import speckleret.metrics as metrics
 import speckleret.plots as plots
 import speckleret.supports as supports
+import speckleret.initializers as inits
 
 # Review paper: https://doi.org/10.1063/1.2403783
 # Google collab: https://colab.research.google.com/drive/1anePjgg1fKbYrCCmDeRKblobryq-O4Rv
@@ -87,6 +88,31 @@ def RAAR(x, magnitude_S, magnitude_M, support, beta: float = 0.7):
     return beta * ASR(x, magnitude_S, magnitude_M, support)  +  (1 - beta) * proj
 
 
+def run(
+        magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray = None,
+        target_field: np.ndarray = None, init: np.ndarray = None,
+        algorithm: callable = RAAR, algorithm_kwargs: tuple = None,
+        max_iter: int = 100, rel_tol: float = 1e-3):
+    
+    x = inits.flat_phases(magnitude=np.abs(magnitudes[0])) if init is None else init.copy()
+    results = {'mse_fourier': [], 'quality': [], 'quality_phi': []}
+    support = np.ones(magnitudes[0].shape, dtype=bool) if support is None else support
+
+    for i in range(max_iter):
+        results['mse_fourier'].append(metrics.mse(transforms.fourier_transform(x), np.abs(magnitudes[1])))
+        if target_field is not None and np.iscomplexobj(target_field):
+            results['quality'].append(metrics.quality(x[support], target_field[support], inversed=True))
+            results['quality_phi'].append(metrics.quality(np.exp(1j * np.angle(x[support])), np.exp(1j * np.angle(target_field[support])), inversed=True))
+
+        x = algorithm(x=x, magnitude_S=np.abs(magnitudes[0]), magnitude_M=np.abs(magnitudes[1]), support=support, **algorithm_kwargs)
+
+        if i > 0:
+            var_tol = (results['mse_fourier'][-1] - results['mse_fourier'][-2])/results['mse_fourier'][-2]
+            if np.abs(var_tol) < rel_tol:
+                break
+
+    return x, results
+
 
 if __name__ == "__main__":
     sz = 50
@@ -112,3 +138,7 @@ if __name__ == "__main__":
 
     plots.compare_complex_fields(field * support, y_hat * support)
     plt.show()
+
+
+
+
