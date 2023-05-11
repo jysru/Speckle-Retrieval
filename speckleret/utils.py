@@ -88,7 +88,12 @@ def extract_average_centroid(array,
     return np.array(centroids) if return_array else centroids
     
 
-def bin_image(array, newshape):
+def bin_image(array, factor: int):
+    """Average subsequent image pixels"""
+    if array.shape[0] % factor or array.shape[1] % factor:
+        raise ValueError("Non integer factor")
+    
+    newshape = (np.array(array.shape) / factor).astype(int)
     shape = (newshape[0], array.shape[0] // newshape[0],
              newshape[1], array.shape[1] // newshape[1])
     return array.reshape(shape).mean(axis=(-1,1))
