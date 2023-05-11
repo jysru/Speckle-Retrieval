@@ -84,6 +84,8 @@ def phase_difference(field1: np.ndarray, field2: np.ndarray, support: np.ndarray
     plt.colorbar()
     plt.title("Phase difference")
 
+    return phi_diff
+
 
 def compare_arrays(array1, array2, figsize: tuple[int,int] = (15,5), remove_ticks: bool = False, remove_colorbars: bool = False, intensity: bool = False, cmap: str = 'gray'):
     if np.iscomplexobj(array1):
