@@ -7,14 +7,42 @@ import speckleret
 
 
 def nested_arrays_to_ndarray(nested_array, abs_if_complex: bool = True, sqrt_if_real: bool = True):
+    try:
+        _ = np.zeros(shape=(nested_array.shape + nested_array[0, 0].shape))
+        type = 1
+    except:
+        _ = np.zeros(shape=(len(nested_array), len(nested_array[0]), *nested_array[0][0].shape))
+        type = 2
+
+    if type == 1:
+        return _nested_arrays_to_ndarray_type1(nested_array, abs_if_complex=abs_if_complex, sqrt_if_real=sqrt_if_real)
+    elif type == 2:
+        return _nested_arrays_to_ndarray_type2(nested_array, abs_if_complex=abs_if_complex, sqrt_if_real=sqrt_if_real)
+    else:
+        raise ValueError("Unknown array type")
+
+
+def _nested_arrays_to_ndarray_type1(nested_array, abs_if_complex: bool = True, sqrt_if_real: bool = True):
     ndarray = np.zeros(shape=(nested_array.shape + nested_array[0, 0].shape))
 
     for i in range(ndarray.shape[0]):
         for j in range(ndarray.shape[1]):
-            if np.iscomplexobj(nested_array[i, j]):
+            if np.iscomplexobj(ndarray[i, j]):
                 ndarray[i, j, ...] = np.abs(nested_array[i, j]) if abs_if_complex else nested_array[i, j]
             else:
                 ndarray[i, j, ...] = np.sqrt(nested_array[i, j]) if sqrt_if_real else nested_array[i, j]
+    return ndarray
+
+
+def _nested_arrays_to_ndarray_type2(nested_array, abs_if_complex: bool = True, sqrt_if_real: bool = True):
+    ndarray = np.zeros(shape=(len(nested_array), len(nested_array[0]), *nested_array[0][0].shape))
+
+    for i in range(ndarray.shape[0]):
+        for j in range(ndarray.shape[1]):
+            if np.iscomplexobj(ndarray[i][j]):
+                ndarray[i, j, ...] = np.abs(nested_array[i][j]) if abs_if_complex else nested_array[i][j]
+            else:
+                ndarray[i, j, ...] = np.sqrt(nested_array[i][j]) if sqrt_if_real else nested_array[i][j]
     return ndarray
 
 
