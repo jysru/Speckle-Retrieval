@@ -93,9 +93,13 @@ def run(
         target_field: np.ndarray = None, init: np.ndarray = None,
         algorithm: callable = RAAR, algorithm_kwargs: tuple = None,
         max_iter: int = 100, rel_tol: float = 1e-3):
+
+    if target_field is not None and np.iscomplexobj(target_field):
+        results = {'mse_fourier': [], 'quality': [], 'quality_phi': []}
+    else:
+        results = {'mse_fourier': []}
     
     x = inits.flat_phases(magnitude=np.abs(magnitudes[0])) if init is None else init.copy()
-    results = {'mse_fourier': [], 'quality': [], 'quality_phi': []}
     support = np.ones(magnitudes[0].shape, dtype=bool) if support is None else support
 
     for i in range(max_iter):
