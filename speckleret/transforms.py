@@ -24,6 +24,28 @@ def pad_img(img: np.ndarray, pad: float = 1):
     return np.pad(img, pad_width=[int(img.shape[0] * pad / 2), int(img.shape[1] * pad / 2)], mode='constant')
 
 
+def resize_image(img: np.ndarray, new_size: tuple[int, int]) -> np.ndarray:
+    """ Resize a 2D image or array in a convenient manner
+
+        If new_size is greater than the initial size, the image is padded with zeroes corresponding to the size difference.
+        If new_size is smaller than the initial size, the image is cropped to the new size, from the center.
+    """
+    img = img.copy()
+    init_size = np.array(img.shape)
+    new_size = np.array(new_size)
+
+    if np.all(new_size > init_size):
+        # Image will be padded with zeros
+        pad_widths = [int((new_size[0] - init_size[0]) // 2), int((new_size[1] - init_size[1]) // 2)]
+        img = np.pad(img, pad_width=pad_widths, mode='constant')
+    elif np.all(new_size < init_size):
+        # Image will be cropped
+        img = crop_img(img, new_size)
+    else:
+        raise NotImplementedError('Please input a square image!')
+    return img
+
+
 def fourier_transform(field: np.ndarray, pad: float = None):
     if pad is not None:
         init_shape = field.shape
