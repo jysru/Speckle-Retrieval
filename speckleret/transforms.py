@@ -46,6 +46,25 @@ def resize_image(img: np.ndarray, new_size: tuple[int, int]) -> np.ndarray:
     return img
 
 
+def nomalize_field(field: np.ndarray, type: str='energy') -> np.ndarray:
+    """ Normalize an electromagnetic field
+
+        type can be:
+            - 'energy' (default) : Field is normalized by its energy
+            - 'max': Field is normalized by the maximum value of its magnitude
+            
+    """
+    field = field.copy()
+    type = type.lower()
+
+    if type == 'energy':
+        field_energy = np.sum(np.square(np.abs(field)))
+        field = field / np.sqrt(field_energy)
+    elif type == 'max':
+        field = field / np.max(np.abs(field))
+    return field
+
+
 def fourier_transform(field: np.ndarray, pad: float = None):
     if pad is not None:
         init_shape = field.shape
