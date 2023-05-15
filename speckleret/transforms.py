@@ -46,7 +46,7 @@ def resize_image(img: np.ndarray, new_size: tuple[int, int]) -> np.ndarray:
     return img
 
 
-def nomalize_field(field: np.ndarray, type: str='energy') -> np.ndarray:
+def normalize_field(field: np.ndarray, type: str='energy') -> np.ndarray:
     """ Normalize an electromagnetic field
 
         type can be:
