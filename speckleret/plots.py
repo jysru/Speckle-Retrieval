@@ -82,6 +82,7 @@ def phase_difference(field1: np.ndarray, field2: np.ndarray, support: np.ndarray
     print(f"Phase error:")
     print(f"  - Mean: {np.nanmean(phi_diff):3.5f} rad")
     print(f"  - Std: {np.nanstd(phi_diff):3.5f} rad")
+    print(f"  - Lambda / X: {2 * np.pi / np.nanstd(phi_diff):3.5f} rms")
 
     plt.figure()
     plt.imshow(phi_diff - np.nanmean(phi_diff), cmap=cmap)
