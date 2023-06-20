@@ -36,11 +36,14 @@ def quality(x: np.ndarray, y: np.ndarray, squared: bool = True, inversed: bool =
     return q
 
 
-def pearson(x, y):
+def pearson(x, y, inversed: bool = False):
         if np.iscomplexobj(x):
             x = np.abs(x)
         if np.iscomplexobj(y):
             y = np.abs(y)
 
         s = np.sum((x - np.mean(x)) * (y - np.mean(y)) / x.size)
-        return s / (np.std(x) * np.std(y))
+        p = s / (np.std(x) * np.std(y))
+        if inversed:
+            p = 1 - p
+        return p
