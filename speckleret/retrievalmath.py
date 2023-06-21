@@ -95,16 +95,18 @@ def run(
         max_iter: int = 100, rel_tol: float = 1e-3):
 
     if target_field is not None and np.iscomplexobj(target_field):
-        results = {'mse_fourier': [], 'pearson_fourier': [], 'quality': [], 'quality_phi': []}
+        results = {'mse_fourier': [], 'pearson_fourier': [], 'pearson_fourier_intens': [],'quality': [], 'quality_phi': []}
     else:
-        results = {'mse_fourier': [], 'pearson_fourier': []}
+        results = {'mse_fourier': [], 'pearson_fourier': [], 'pearson_fourier_intens': []}
     
     x = inits.flat_phases(magnitude=np.abs(magnitudes[0])) if init is None else init.copy()
     support = np.ones(magnitudes[0].shape, dtype=bool) if support is None else support
 
     for i in range(max_iter):
-        results['mse_fourier'].append(metrics.mse(transforms.fourier_transform(x), np.abs(magnitudes[1])))
-        results['pearson_fourier'].append(metrics.pearson(np.abs(transforms.fourier_transform(x)), np.abs(magnitudes[1]), inversed=True))
+        x_tmp = transforms.fourier_transform(x)
+        results['mse_fourier'].append(metrics.mse(np.abs(x_tmp), np.abs(magnitudes[1])))
+        results['pearson_fourier'].append(metrics.pearson(np.abs(x_tmp), np.abs(magnitudes[1]), inversed=True))
+        results['pearson_fourier_intens'].append(metrics.pearson(np.square(np.abs(x_tmp)), np.square(np.abs(magnitudes[1])), inversed=True))
         if target_field is not None and np.iscomplexobj(target_field):
             results['quality'].append(metrics.quality(x[support], target_field[support], inversed=True))
             results['quality_phi'].append(metrics.quality(np.exp(1j * np.angle(x[support])), np.exp(1j * np.angle(target_field[support])), inversed=True))
