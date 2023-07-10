@@ -31,32 +31,32 @@ def P_M(
     return inverse_transform(X)
 
 
-def R_M(x, gamma_M, magnitude):
+def R_M(x, gamma_M, magnitude, projector_M: callable = P_M):
     """Magnitude reflector"""
-    return (1 + gamma_M) * P_M(x, magnitude) - gamma_M * x
+    return (1 + gamma_M) * projector_M(x, magnitude) - gamma_M * x
 
 
-def R_S(x, gamma_S, magnitude, support):
+def R_S(x, gamma_S, magnitude, support, projector_S: callable = P_S):
     """Support reflector"""
-    return (1 + gamma_S) * P_S(x, magnitude, support) - gamma_S * x
+    return (1 + gamma_S) * projector_S(x, magnitude, support) - gamma_S * x
 
 
-def ER(x, magnitude_S, magnitude_M, support):
+def ER(x, magnitude_S, magnitude_M, support, projector_S: callable = P_S, projector_M: callable = P_M):
     """Error Reduction algorithm iteration"""
-    return P_S(P_M(x, magnitude_M), magnitude_S, support)
+    return projector_S(projector_M(x, magnitude_M), magnitude_S, support)
 
 
-def SF(x, magnitude_S, magnitude_M, support):
+def SF(x, magnitude_S, magnitude_M, support, reflector_S: callable = R_S, projector_M: callable = P_M):
     """Solvent Flipping algorithm iteration"""
-    return R_S(P_M(x, magnitude_M), 1, magnitude_S, support)
+    return reflector_S(projector_M(x, magnitude_M), 1, magnitude_S, support)
 
 
-def HIO(x, magnitude_S, magnitude_M, support, beta: float = 0.7):
+def HIO(x, magnitude_S, magnitude_M, support, beta: float = 0.7, projector_S: callable = P_S, projector_M: callable = P_M):
     """Hybrid Input-Output algorithm iteration"""
     x_new = x.copy()
-    proj = P_M(x, magnitude_M)
+    proj = projector_M(x, magnitude_M)
     x_new[support] = proj[support]
-    x_new[np.logical_not(support)] = x_new[np.logical_not(support)] - beta * P_S(proj, magnitude_S, support)[np.logical_not(support)]
+    x_new[np.logical_not(support)] = x_new[np.logical_not(support)] - beta * projector_S(proj, magnitude_S, support)[np.logical_not(support)]
     return x_new
 
 
@@ -139,6 +139,27 @@ def report_convergence_results(results: dict, yscale: str = 'log'):
     plt.title('Metrics evolution')
     plt.xlabel('Iteration')
     plt.legend()
+
+
+class PhaseRetrieval():
+
+    def __init__(self) -> None:
+        self.targets = None
+        self.magnitudes = None
+        self.supports = None
+        self.inits = None
+        self.algorithm = None
+        self.algorithm_kwargs = None
+        self.max_iter = None
+        self.rel_tol = None
+        pass
+
+    def run(self) -> None:
+        pass
+
+    def show(self) -> None:
+        pass
+
 
 
 
