@@ -11,7 +11,12 @@ import speckleret.initializers as inits
 # Google collab: https://colab.research.google.com/drive/1anePjgg1fKbYrCCmDeRKblobryq-O4Rv
 
 
-def P_S(x, magnitude, support, apply_support: bool = True):
+def P_S(
+    x: np.ndarray,
+    magnitude: np.ndarray,
+    support: np.ndarray,
+    apply_support: bool = True,
+    ):
     """Support projection"""
     x_new = magnitude * np.exp(1j * np.angle(x))
     if apply_support:
@@ -20,8 +25,8 @@ def P_S(x, magnitude, support, apply_support: bool = True):
 
 
 def P_M(
-    x,
-    magnitude,
+    x: np.ndarray,
+    magnitude: np.ndarray,
     direct_transform: callable = transforms.fourier_transform,
     inverse_transform: callable = transforms.inverse_fourier_transform,
     ):
@@ -31,27 +36,60 @@ def P_M(
     return inverse_transform(X)
 
 
-def R_M(x, gamma_M, magnitude, projector_M: callable = P_M):
+def R_M(
+    x: np.ndarray,
+    gamma_M: float,
+    magnitude: np.ndarray,
+    projector_M: callable = P_M,
+    ):
     """Magnitude reflector"""
     return (1 + gamma_M) * projector_M(x, magnitude) - gamma_M * x
 
 
-def R_S(x, gamma_S, magnitude, support, projector_S: callable = P_S):
+def R_S(
+    x: np.ndarray,
+    gamma_S: float,
+    magnitude: np.ndarray,
+    support: np.ndarray,
+    projector_S: callable = P_S,
+    ):
     """Support reflector"""
     return (1 + gamma_S) * projector_S(x, magnitude, support) - gamma_S * x
 
 
-def ER(x, magnitude_S, magnitude_M, support, projector_S: callable = P_S, projector_M: callable = P_M):
+def ER(
+    x: np.ndarray,
+    magnitude_S: np.ndarray,
+    magnitude_M: np.ndarray,
+    support: np.ndarray,
+    projector_S: callable = P_S,
+    projector_M: callable = P_M,
+    ):
     """Error Reduction algorithm iteration"""
     return projector_S(projector_M(x, magnitude_M), magnitude_S, support)
 
 
-def SF(x, magnitude_S, magnitude_M, support, reflector_S: callable = R_S, projector_M: callable = P_M):
+def SF(
+    x: np.ndarray,
+    magnitude_S: np.ndarray,
+    magnitude_M: np.ndarray,
+    support: np.ndarray,
+    reflector_S: callable = R_S,
+    projector_M: callable = P_M,
+    ):
     """Solvent Flipping algorithm iteration"""
     return reflector_S(projector_M(x, magnitude_M), 1, magnitude_S, support)
 
 
-def HIO(x, magnitude_S, magnitude_M, support, beta: float = 0.7, projector_S: callable = P_S, projector_M: callable = P_M):
+def HIO(
+    x: np.ndarray,
+    magnitude_S: np.ndarray,
+    magnitude_M: np.ndarray,
+    support: np.ndarray,
+    beta: float = 0.7,
+    projector_S: callable = P_S,
+    projector_M: callable = P_M,
+    ):
     """Hybrid Input-Output algorithm iteration"""
     x_new = x.copy()
     proj = projector_M(x, magnitude_M)
@@ -60,7 +98,19 @@ def HIO(x, magnitude_S, magnitude_M, support, beta: float = 0.7, projector_S: ca
     return x_new
 
 
-def DM(x, magnitude_S, magnitude_M, support, beta: float = 0.7, gamma_S: float = None, gamma_M: float = None):
+def DM(
+    x: np.ndarray,
+    magnitude_S: np.ndarray,
+    magnitude_M: np.ndarray,
+    support: np.ndarray,
+    beta: float = 0.7,
+    gamma_S: float = None,
+    gamma_M: float = None,
+    projector_S: callable = P_S,
+    projector_M: callable = P_M,
+    reflector_S: callable = R_S,
+    reflector_M: callable = R_M,
+    ):
     """Difference Maps algorithm iteration"""
     # Random projections and the optimization of an algorithm for phase retrieval, J. Phys. A-Math Gen, Vol 36 pp 2995-3007
     if gamma_S is None:
@@ -68,28 +118,51 @@ def DM(x, magnitude_S, magnitude_M, support, beta: float = 0.7, gamma_S: float =
     if gamma_M is None:
         gamma_M = -1 / beta
     
-    x_PMRS = P_M(R_S(x, gamma_S, magnitude_S, support), magnitude_M)
-    x_PSRM = P_S(R_M(x, gamma_M, magnitude_M), magnitude_S, support)
+    x_PMRS = projector_M(reflector_S(x, gamma_S, magnitude_S, support), magnitude_M)
+    x_PSRM = projector_S(reflector_M(x, gamma_M, magnitude_M), magnitude_S, support)
     x_new = x + beta * (x_PMRS - x_PSRM)
     return x_new
 
 
-def ASR(x, magnitude_S, magnitude_M, support):
+def ASR(
+    x: np.ndarray,
+    magnitude_S: np.ndarray,
+    magnitude_M: np.ndarray,
+    support: np.ndarray,
+    reflector_S: callable = R_S,
+    reflector_M: callable = R_M,
+    ):
     """Averaged succesive reflections algorithm iteration"""
-    return 0.5 * (R_S(R_M(x, 1, magnitude_M), 1, magnitude_S, support) + x)
+    return 0.5 * (reflector_S(reflector_M(x, 1, magnitude_M), 1, magnitude_S, support) + x)
 
 
-def HPR(x, magnitude_S, magnitude_M, support, beta: float = 0.7):
+def HPR(
+    x: np.ndarray,
+    magnitude_S: np.ndarray,
+    magnitude_M: np.ndarray,
+    support: np.ndarray,
+    beta: float = 0.7,
+    projector_M: callable = P_M,
+    reflector_S: callable = R_S,
+    reflector_M: callable = R_M,
+    ):
     """Hybrid projection reflection algorithm iteration"""
-    proj = P_M(x, magnitude_M)
-    x1 = R_S(R_M(x, 1, magnitude_M) + (beta - 1) * proj, 1, magnitude_S, support)
+    proj = projector_M(x, magnitude_M)
+    x1 = reflector_S(reflector_M(x, 1, magnitude_M) + (beta - 1) * proj, 1, magnitude_S, support)
     x2 = (1 - beta) * proj 
     return 0.5 * (x1 + x + x2)
 
 
-def RAAR(x, magnitude_S, magnitude_M, support, beta: float = 0.7):
+def RAAR(
+    x: np.ndarray,
+    magnitude_S: np.ndarray,
+    magnitude_M: np.ndarray,
+    support: np.ndarray,
+    beta: float = 0.7,
+    projector_M: callable = P_M,
+    ):
     """Relaxed Averaged Alternating Reflectors algorithm iteration"""
-    proj = P_M(x, magnitude_M)
+    proj = projector_M(x, magnitude_M)
     return beta * ASR(x, magnitude_S, magnitude_M, support)  +  (1 - beta) * proj
 
 
