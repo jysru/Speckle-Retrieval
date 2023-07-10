@@ -19,11 +19,16 @@ def P_S(x, magnitude, support, apply_support: bool = True):
     return x_new
 
 
-def P_M(x, magnitude):
+def P_M(
+    x,
+    magnitude,
+    direct_transform: callable = transforms.fourier_transform,
+    inverse_transform: callable = transforms.inverse_fourier_transform,
+    ):
     """Fourier magnitude projection"""
-    X = transforms.fourier_transform(x)
+    X = direct_transform(x)
     X = magnitude * np.exp(1j * np.angle(X))
-    return transforms.inverse_fourier_transform(X)
+    return inverse_transform(X)
 
 
 def R_M(x, gamma_M, magnitude):
