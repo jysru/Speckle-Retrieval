@@ -225,14 +225,14 @@ class AltProjPR():
         magnitudes: list[np.ndarray, np.ndarray],
         targets: list[np.ndarray, np.ndarray] = None,
         supports: list[np.ndarray, np.ndarray] = None,
-        direct_transform: callable = AltProjPR.default_direct_transform,
-        inverse_transform: callable = AltProjPR.default_inverse_transform,
-        apply_planes_magnitudes: list[bool, bool] = [AltProjPR.apply_planes_magnitudes]
-        apply_planes_supports: list[bool, bool] = [AltProjPR.apply_planes_supports]
+        direct_transform: callable = None,
+        inverse_transform: callable = None,
+        apply_planes_magnitudes: list[bool, bool] = None,
+        apply_planes_supports: list[bool, bool] = None,
         ) -> None:
 
-        self._direct_transform: callable = None
-        self._inverse_transform: callable = None
+        self._direct_transform: callable = AltProjPR.default_direct_transform
+        self._inverse_transform: callable = AltProjPR.default_inverse_transform
         self._magnitudes: list[np.ndarray, np.ndarray] = None
         self._targets: list[np.ndarray, np.ndarray] = None
         self._supports: list[np.ndarray, np.ndarray] = None
@@ -241,8 +241,8 @@ class AltProjPR():
         self._algorithm_kwargs: dict = None
         self._max_iter: int = None
         self._rel_tol: float = None
-        self._apply_planes_magnitudes: list[bool, bool] = apply_planes_magnitudes
-        self._apply_planes_supports: bool = apply_planes_supports
+        self._apply_planes_magnitudes: list[bool, bool] = AltProjPR.apply_planes_magnitudes
+        self._apply_planes_supports: bool = AltProjPR.apply_planes_supports
 
         self._set_transforms(direct_transform, inverse_transform)
         self._set_magnitudes(magnitudes)
@@ -261,7 +261,7 @@ class AltProjPR():
             is_valid = is_valid & callable(args[i])
         return is_valid
 
-    def _set_magnitudes(self, magnitudes[i]: list[np.ndarray, np.ndarray]) -> None:
+    def _set_magnitudes(self, magnitudes: list[np.ndarray, np.ndarray]) -> None:
         self._magnitudes = self._check_magnitudes(magnitudes)
 
     def _check_magnitudes(self, magnitudes: list[np.ndarray, np.ndarray]) -> None:
@@ -270,12 +270,12 @@ class AltProjPR():
                 magnitudes[i] = np.abs(magnitudes[i])
         return magnitudes
 
-    def _apply_magnitude(self, x: np.ndarray, idx: int) -> np.ndarray
+    def _apply_magnitude(self, x: np.ndarray, idx: int) -> np.ndarray:
         if self.magnitudes is not None:
             x = self._magnitudes[idx] * np.exp(1j * np.angle(x))
         return x
 
-    def _apply_support(self, x: np.ndarray, idx: int) -> np.ndarray
+    def _apply_support(self, x: np.ndarray, idx: int) -> np.ndarray:
         if self._supports is not None:
             x[np.logical_not(self._supports[idx])] = 0
         return x
