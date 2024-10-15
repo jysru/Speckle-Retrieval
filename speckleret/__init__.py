@@ -1,3 +1,4 @@
+from . import cupy
 from . import metrics
 from . import plots
 from . import retrieval

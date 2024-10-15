@@ -78,6 +78,7 @@ def phase_difference(field1: np.ndarray, field2: np.ndarray, support: np.ndarray
         field1[np.logical_not(support)] = np.nan
         field2[np.logical_not(support)] = np.nan
     phi_diff = np.angle(np.exp(1j * (np.angle(field1) - np.angle(field2))))
+    phi_diff = np.angle(np.exp(1j * (phi_diff - np.nanmean(phi_diff))))
 
     print(f"Phase error:")
     print(f"  - Mean: {np.nanmean(phi_diff):3.5f} rad")
