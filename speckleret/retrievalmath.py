@@ -7,6 +7,8 @@ import speckleret.plots as plots
 import speckleret.supports as supports
 import speckleret.initializers as inits
 
+import scipy.ndimage as ndi
+
 # Review paper: https://doi.org/10.1063/1.2403783
 # Google collab: https://colab.research.google.com/drive/1anePjgg1fKbYrCCmDeRKblobryq-O4Rv
 
@@ -166,16 +168,51 @@ def RAAR(
     return beta * ASR(x, magnitude_S, magnitude_M, support)  +  (1 - beta) * proj
 
 
+
+def OSS(
+    x: np.ndarray,
+    magnitude_S: np.ndarray,
+    magnitude_M: np.ndarray,
+    support: np.ndarray,
+    beta: float = 0.7,
+    sigma: float = 1.0,
+    filter_decay: float = 0.99,
+    iteration: int = 0,
+    projector_S: callable = P_S,
+    projector_M: callable = P_M,
+):
+    """OverSampling Smoothness algorithm iteration"""
+    # Step 1: Apply the Fourier magnitude projection
+    x_new = projector_M(x, magnitude_M)
+    
+    # Step 2: Apply the support projection
+    x_new = projector_S(x_new, magnitude_S, support)
+    
+    # Step 3: Apply a smoothing operation with decay (e.g., Gaussian filter)
+    current_sigma = sigma * (filter_decay ** iteration)  # Decay the sigma over iterations
+    x_new = ndi.gaussian_filter(x_new, sigma=current_sigma)
+    
+    # Step 4: Update the estimate with the relaxation parameter beta
+    x_new = x + beta * (x_new - x)
+    
+    return x_new
+
+
+
+
 def run(
         magnitudes: tuple[np.ndarray, np.ndarray], support: np.ndarray = None,
         target_field: np.ndarray = None, init: np.ndarray = None,
-        algorithm: callable = RAAR, algorithm_kwargs: tuple = None,
+        algorithm: callable = RAAR, algorithm_kwargs: dict = {},
         max_iter: int = 100, rel_tol: float = 1e-3):
 
+    if algorithm.__name__ == 'OSS':
+        algorithm_kwargs['iteration'] = 0
+
     if target_field is not None and np.iscomplexobj(target_field):
-        results = {'mse_fourier': [], 'pearson_fourier': [], 'pearson_fourier_intens': [],'quality': [], 'quality_phi': []}
+        results = {'mse_fourier': [], 'pearson_fourier': [], 'pearson_fourier_intens': [],'quality': [], 'quality_phi': [], 'x_best': []}
     else:
-        results = {'mse_fourier': [], 'pearson_fourier': [], 'pearson_fourier_intens': []}
+        results = {'mse_fourier': [], 'pearson_fourier': [], 'pearson_fourier_intens': [], 'x_best': []}
     
     x = inits.flat_phases(magnitude=np.abs(magnitudes[0])) if init is None else init.copy()
     support = np.ones(magnitudes[0].shape, dtype=bool) if support is None else support
@@ -183,13 +220,29 @@ def run(
     for i in range(max_iter):
         x_tmp = transforms.fourier_transform(x)
         results['mse_fourier'].append(metrics.mse(np.abs(x_tmp), np.abs(magnitudes[1])))
+        if i == 0:
+            results['x_best'] = x_tmp
+        else:
+            if results['mse_fourier'][-1] < np.min(results['mse_fourier'][:-1]):
+                results['x_best'] = x_tmp
+                
         results['pearson_fourier'].append(metrics.pearson(np.abs(x_tmp), np.abs(magnitudes[1]), inversed=True))
         results['pearson_fourier_intens'].append(metrics.pearson(np.square(np.abs(x_tmp)), np.square(np.abs(magnitudes[1])), inversed=True))
         if target_field is not None and np.iscomplexobj(target_field):
             results['quality'].append(metrics.quality(x[support], target_field[support], inversed=True))
             results['quality_phi'].append(metrics.quality(np.exp(1j * np.angle(x[support])), np.exp(1j * np.angle(target_field[support])), inversed=True))
 
-        x = algorithm(x=x, magnitude_S=np.abs(magnitudes[0]), magnitude_M=np.abs(magnitudes[1]), support=support, **algorithm_kwargs)
+        # Pass the current iteration number to the algorithm
+        if algorithm.__name__ == 'OSS':
+            algorithm_kwargs['iteration'] = i
+
+        x = algorithm(
+            x=x,
+            magnitude_S=np.abs(magnitudes[0]),
+            magnitude_M=np.abs(magnitudes[1]),
+            support=support,
+            **algorithm_kwargs,
+        )
 
         if i > 0:
             var_tol = (results['mse_fourier'][-1] - results['mse_fourier'][-2])/results['mse_fourier'][-2]

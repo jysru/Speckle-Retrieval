@@ -83,7 +83,7 @@ def fresnel_transform(field: np.ndarray, dz: float = 0.0, pad: float = 2, wavele
     _, _, kx, ky = fourier_grids(field, pixel_size=pixel_size)
 
     ft = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(field)))
-    propagator = dz * np.sqrt(4 * np.square(np.pi/wavelength) - np.square(kx) - np.square(ky))
+    propagator = dz * np.sqrt(np.abs(4 * np.square(np.pi/wavelength) - np.square(kx) - np.square(ky)))
     ft = ft * np.exp(1j * propagator)
     ift = np.fft.ifftshift(np.fft.ifft2(np.fft.ifftshift(ft)))
     return crop_img(ift, init_shape) if pad is not None else ft
