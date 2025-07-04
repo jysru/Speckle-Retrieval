@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+from waveoptics.metrics.numpy import pearson
+from waveoptics.plots.plots import complex_to_hsv
+
 import speckleret.transforms as transforms
 import speckleret.metrics as metrics
 import speckleret.plots as plots
@@ -257,7 +260,7 @@ def report_convergence_results(results: dict, yscale: str = 'log'):
         print(f"Qualities:\t Last = {1-results['quality'][-1]:3.5f},\t Last_phi = {1-results['quality_phi'][-1]:3.5f}")
 
     plt.figure()
-    plt.plot(results['mse_fourier'], label='Fourier MSE')
+    plt.plot(results['pearson_fourier_intens'], label=r'$1 - PCC(|\hat{y}|^2, |y|^2)$')
     if 'quality' in results.keys():
         plt.plot(results['quality'], label='1 - Q')
         plt.plot(results['quality_phi'], label='1 - Qphi')
@@ -265,6 +268,54 @@ def report_convergence_results(results: dict, yscale: str = 'log'):
     plt.title('Metrics evolution')
     plt.xlabel('Iteration')
     plt.legend()
+
+
+
+
+def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, power: float = 1, figsize: tuple[int, int] = (12, 7)):
+    cropped = slice(window_crop, -window_crop) if window_crop >= 1 else slice(0, -1)
+    pcc_fourier_intensity = pearson(
+        x=np.square(np.abs(ft[cropped, cropped])),
+        y=np.square(np.abs(y_hat[cropped, cropped])),
+    )
+
+    plt.figure(figsize=figsize)
+
+    plt.suptitle(f"Phase retrieval results: Fourier intensity PCC = {pcc_fourier_intensity*100:3.4f} %\n(Brightnesses = |field|^{power})")
+    
+    plt.subplot(2, 3, 1)
+    plt.imshow(np.power(np.abs(field[cropped, cropped]), power), cmap='gray')
+    plt.axis('off')
+    plt.title('Measured NF: ' + r'$|x|$' + f'^{power}')
+
+    plt.subplot(2, 3, 2)
+    plt.imshow(np.power(np.abs(x_hat[cropped, cropped]), power), cmap='gray')
+    plt.axis('off')
+    plt.title('Retrieved NF: ' + r'$|\hat{x}|$' + f'^{power}')
+
+    plt.subplot(2, 3, 3)
+    plt.title('Retrieved NF: ' + r'$\hat{x}$')
+    plt.imshow(complex_to_hsv(x_hat[cropped, cropped], rmin=0, rmax=np.max(np.power(np.abs(x_hat), power)), power=power))
+    plt.axis('off')
+
+    plt.subplot(2, 3, 4)
+    plt.imshow(np.power(np.abs(ft[cropped, cropped]), power), cmap='gray')
+    plt.axis('off')
+    plt.title('Measured FF: ' + r'$|y|$' + f'^{power}')
+
+    plt.subplot(2, 3, 5)
+    plt.imshow(np.power(np.abs(y_hat[cropped, cropped]), power), cmap='gray')
+    plt.axis('off')
+    plt.title('Retrieved FF: ' + r'$|\hat{y}|$' + f'^{power}')
+
+    plt.subplot(2, 3, 6)
+    plt.imshow(complex_to_hsv(y_hat[cropped, cropped], rmin=0, rmax=np.max(np.power(np.abs(y_hat), power)), power=power))
+    plt.axis('off')
+    plt.title('Retrieved FF: ' + r'$\hat{y}$')
+
+
+
+
 
 
 class AltProjPR():
