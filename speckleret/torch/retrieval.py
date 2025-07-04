@@ -528,12 +528,12 @@ def run(
 
 
 
-def report_convergence_results(results: dict, yscale: str = 'log'):
+def report_convergence_results(results: dict, yscale: str = 'log', key: str = 'pearson_fourier_intens'):
     """Format is [iteration, N, C]"""
 
     plt.figure()
-    for i in range(results['pearson_fourier_intens'].shape[1]):
-        plt.plot(results['pearson_fourier_intens'][:, i, 0].cpu())
+    for i in range(results[key].shape[1]):
+        plt.plot(results[key][:, i, 0].cpu())
     plt.yscale(yscale)
     plt.title('Fourier intensity evolution (1 - PCC)')
     plt.ylabel('1 - PCC')
