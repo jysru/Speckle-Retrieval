@@ -7,6 +7,7 @@ from . import noise
 from . import filter
 from . import retrievalmath
 from . import initializers
+from . import torch
 from . import utils
 
 __version__ = "0.1"
