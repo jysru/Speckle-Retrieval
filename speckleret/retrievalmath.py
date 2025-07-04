@@ -279,7 +279,7 @@ def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, power:
         y=np.square(np.abs(y_hat[cropped, cropped])),
     )
 
-    plt.figure(figsize=figsize)
+    hfig = plt.figure(figsize=figsize)
 
     plt.suptitle(f"Phase retrieval results: Fourier intensity PCC = {pcc_fourier_intensity*100:3.4f} %\n(Brightnesses = |field|^{power})")
     
@@ -313,9 +313,7 @@ def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, power:
     plt.axis('off')
     plt.title('Retrieved FF: ' + r'$\hat{y}$')
 
-
-
-
+    return hfig
 
 
 class AltProjPR():
