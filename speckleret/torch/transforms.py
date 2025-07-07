@@ -133,7 +133,7 @@ def normalize_field(field: torch.Tensor, norm_type: str = 'energy') -> torch.Ten
     return field / norm_factor
 
 
-def fourier_transform(field: torch.Tensor) -> torch.Tensor:
+def fourier_transform(field: torch.Tensor, norm: str = 'ortho') -> torch.Tensor:
     """
     Compute the 2D Fourier transform of complex-valued input images in [N, C, H, W],
     applying FFT over the last two dims (H, W), with fftshift before and after.
@@ -146,17 +146,15 @@ def fourier_transform(field: torch.Tensor) -> torch.Tensor:
     field = torch.fft.fftshift(field, dim=(-2, -1))
 
     # Compute 2D FFT over H and W
-    ft = torch.fft.fft2(field, dim=(-2, -1))
+    ft = torch.fft.fftn(field, dim=(-2, -1), norm=norm)
 
     # Apply fftshift after FFT
     ft = torch.fft.fftshift(ft, dim=(-2, -1))
 
-    # Normalize
-    norm_factor = torch.sqrt(torch.tensor(field.shape[-2] * field.shape[-1], dtype=field.dtype, device=field.device))
-    return ft / norm_factor
+    return ft
 
 
-def inverse_fourier_transform(field: torch.Tensor) -> torch.Tensor:
+def inverse_fourier_transform(field: torch.Tensor, norm: str = 'ortho') -> torch.Tensor:
     """
     Compute the 2D inverse Fourier transform of complex-valued input images in [N, C, H, W],
     applying inverse FFT over the last two dims (H, W), with ifftshift before and after.
@@ -169,14 +167,12 @@ def inverse_fourier_transform(field: torch.Tensor) -> torch.Tensor:
     field = torch.fft.ifftshift(field, dim=(-2, -1))
 
     # Compute 2D inverse FFT over H and W
-    ift = torch.fft.ifft2(field, dim=(-2, -1))
+    ift = torch.fft.ifftn(field, dim=(-2, -1), norm=norm)
 
     # Apply ifftshift after iFFT
     ift = torch.fft.ifftshift(ift, dim=(-2, -1))
 
-    # Scale by sqrt(H*W), matching your NumPy code
-    scale = torch.sqrt(torch.tensor(field.shape[-2] * field.shape[-1], dtype=field.dtype, device=field.device))
-    return ift * scale
+    return ift
 
 
 def fresnel_transform(field: torch.Tensor, dz: float = 0.0, wavelength: float = 1064e-9, pixel_size: float = 5.04e-6):
