@@ -175,7 +175,7 @@ def inverse_fourier_transform(field: torch.Tensor, norm: str = 'ortho') -> torch
     return ift
 
 
-def fresnel_transform(field: torch.Tensor, dz: float = 0.0, wavelength: float = 1064e-9, pixel_size: float = 5.04e-6):
+def fresnel_transform(field: torch.Tensor, propagator: torch.Tensor = None, dz: float = 0.0, wavelength: float = 1064e-9, pixel_size: float = 5.04e-6):
     """
     Fresnel propagation for a batch of fields [N, C, H, W] applied on last two dims.
 
@@ -193,26 +193,27 @@ def fresnel_transform(field: torch.Tensor, dz: float = 0.0, wavelength: float = 
 
     N, C, H, W = field.shape
 
-    # Get Fourier grids (kx, ky) on CPU or GPU as per field device
-    _, _, kx, ky = fourier_grids(field, pixel_size=pixel_size)
-    kx = kx.to(field.device)
-    ky = ky.to(field.device)
+    if propagator is None:
+        # Get Fourier grids (kx, ky) on CPU or GPU as per field device
+        _, _, kx, ky = fourier_grids(field, pixel_size=pixel_size)
+        kx = kx.to(field.device)
+        ky = ky.to(field.device)
+
+         # Compute the propagator phase factor
+        k = 2 * torch.pi / wavelength
+        val = 4 * torch.square(k) - torch.square(kx) - torch.square(ky)
+        # Clamp negative inside sqrt to zero to avoid NaNs (evanescent waves)
+        val = torch.clamp(val, min=0)
+        propagator = dz * torch.sqrt(val)  # shape [H,W]
 
     # FFT with fftshift on last two dims
-    ft = torch.fft.fftshift(torch.fft.fft2(torch.fft.fftshift(field, dim=(-2, -1)), dim=(-2, -1)), dim=(-2, -1))
-
-    # Compute the propagator phase factor
-    k = 2 * torch.pi / wavelength
-    val = 4 * torch.square(k) - torch.square(kx) - torch.square(ky)
-    # Clamp negative inside sqrt to zero to avoid NaNs (evanescent waves)
-    val = torch.clamp(val, min=0)
-    propagator = dz * torch.sqrt(val)  # shape [H,W]
+    ft = fourier_transform(field)
 
     # Apply the propagator: expand dims to broadcast on N and C
     ft = ft * torch.exp(1j * propagator)[None, None, :, :]
 
     # Inverse FFT with ifftshift on last two dims
-    propagated = torch.fft.ifftshift(torch.fft.ifft2(torch.fft.ifftshift(ft, dim=(-2, -1)), dim=(-2, -1)), dim=(-2, -1))
+    propagated = inverse_fourier_transform(ft)
 
     return propagated
 
