@@ -5,6 +5,8 @@ import torch.optim as optim
 from . import transforms
 from . import metrics
 
+import torchmetrics
+
 
 def flat_phases(tensor: torch.Tensor) -> torch.Tensor:
     """Applies a flat phase tensor to the initial tensor"""
@@ -50,6 +52,7 @@ def gradient_descent(
         optimizer_class = torch.optim.Adam,
         optimizer_kwargs = dict(lr = 1e-1),
         max_iter: int = 50,
+        return_loss: bool = False,
         ):
     if init_phase is None:
         init_phase = 2 * torch.pi * torch.rand_like(torch.abs(magnitude_near_field))
@@ -61,6 +64,7 @@ def gradient_descent(
     )
     optimizer = optimizer_class(model.parameters(), **optimizer_kwargs)
 
+    _loss = []
     for i in range(max_iter):
         optimizer.zero_grad()
         loss = model.loss(torch.abs(magnitude_far_field))
@@ -69,9 +73,14 @@ def gradient_descent(
 
         if i % 10 == 0:
             print(f"Iteration {i}, Loss: {loss.item()}")
+        _loss.append(loss.item())
 
     x_out = torch.abs(magnitude_near_field) * torch.exp(1j * model.phase)
-    return x_out.detach()
+    
+    if return_loss:
+        return x_out.detach(), _loss
+    else:
+        return x_out.detach()
 
 
 
@@ -101,7 +110,16 @@ class PhaseOnlyOptimizer(nn.Module):
         x_fft = transforms.fourier_transform(x)
         x_fft_mag = torch.abs(x_fft)
 
-        pearson_loss = torch.mean(metrics.pearson(x_fft_mag, target_fourier_magnitude, inversed=True))
+        # Use Pearson correlation loss between squared magnitudes
+        pearson_loss = torch.mean(metrics.pearson(torch.square(x_fft_mag), torch.square(target_fourier_magnitude), inversed=True))
+
+        # ssim = torchmetrics.StructuralSimilarityIndexMeasure(data_range=target_fourier_magnitude.max() - target_fourier_magnitude.min()).to(x.device)
+        
+        ssim = torchmetrics.image.MultiScaleStructuralSimilarityIndexMeasure(data_range=target_fourier_magnitude.max() - target_fourier_magnitude.min()).to(x.device)
+        # ssim = torchmetrics.image.UniversalImageQualityIndex(data_range=target_fourier_magnitude.max() - target_fourier_magnitude.min()).to(x.device)
+        
+        # pearson_loss StructuralSimilarityIndexMeasure
+        pearson_loss = 1 - ssim(x_fft_mag, target_fourier_magnitude)
 
         return pearson_loss
     
