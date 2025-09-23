@@ -272,11 +272,12 @@ def report_convergence_results(results: dict, yscale: str = 'log'):
 
 
 
-def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, power: float = 1, figsize: tuple[int, int] = (12, 7)):
+def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, window_crop_ff: int = 60, power: float = 1, figsize: tuple[int, int] = (12, 7)):
     cropped = slice(window_crop, -window_crop) if window_crop >= 1 else slice(0, -1)
+    cropped_ff = slice(window_crop_ff, -window_crop_ff) if window_crop_ff >= 1 else slice(0, -1)
     pcc_fourier_intensity = pearson(
-        x=np.square(np.abs(ft[cropped, cropped])),
-        y=np.square(np.abs(y_hat[cropped, cropped])),
+        x=np.square(np.abs(ft[cropped_ff, cropped_ff])),
+        y=np.square(np.abs(y_hat[cropped_ff, cropped_ff])),
     )
 
     hfig = plt.figure(figsize=figsize)
@@ -299,17 +300,17 @@ def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, power:
     plt.axis('off')
 
     plt.subplot(2, 3, 4)
-    plt.imshow(np.power(np.abs(ft[cropped, cropped]), power), cmap='gray')
+    plt.imshow(np.power(np.abs(ft[cropped_ff, cropped_ff]), power), cmap='gray')
     plt.axis('off')
     plt.title('Measured FF: ' + r'$|y|$' + f'^{power}')
 
     plt.subplot(2, 3, 5)
-    plt.imshow(np.power(np.abs(y_hat[cropped, cropped]), power), cmap='gray')
+    plt.imshow(np.power(np.abs(y_hat[cropped_ff, cropped_ff]), power), cmap='gray')
     plt.axis('off')
     plt.title('Retrieved FF: ' + r'$|\hat{y}|$' + f'^{power}')
 
     plt.subplot(2, 3, 6)
-    plt.imshow(complex_to_hsv(y_hat[cropped, cropped], rmin=0, rmax=np.max(np.power(np.abs(y_hat), power)), power=power))
+    plt.imshow(complex_to_hsv(y_hat[cropped_ff, cropped_ff], rmin=0, rmax=np.max(np.power(np.abs(y_hat), power)), power=power))
     plt.axis('off')
     plt.title('Retrieved FF: ' + r'$\hat{y}$')
 
