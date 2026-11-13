@@ -421,7 +421,7 @@ def _apply_gaussian_smoothing(x, sigma):
 @torch.no_grad()
 def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
         algorithm_kwargs=None, max_iter=100, *, metric_every=1,
-        track_best=False, return_best=False):
+        track_best=False, return_best=False, selection_loss=None):
     """Run NCHW projection iterations with on-device metric histories.
 
     Metrics are recorded after each sampled update, including the final field.
@@ -434,6 +434,9 @@ def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
     stage into the next, independently per N,C, and returns the last stage's
     best by default. return_best=True explicitly overrides this with the global
     MSE choice, which is not the published OSS selection procedure.
+    selection_loss(field) can override global best ranking with a per-N,C
+    objective (e.g. detector-weighted likelihood). Reported Fourier MSE remains
+    actual MSE; best_selection_loss records the ranking objective separately.
     """
     if algorithm is None:
         raise ValueError('You must provide an algorithm callable')
@@ -485,7 +488,10 @@ def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
     track_best = track_best or return_best
     if track_best:
         best = x.clone()
-        best_loss = metrics.mse(transforms.fourier_transform(x), far)
+        best_loss = (metrics.mse(transforms.fourier_transform(x), far)
+                     if selection_loss is None else selection_loss(x))
+        if best_loss.shape != near.shape[:2]:
+            raise ValueError('selection_loss must return one value per N,C')
         best_step = torch.zeros_like(best_loss, dtype=torch.long)
     stage_index = 0
     stage_best = stage_loss = stage_step = None
@@ -498,7 +504,7 @@ def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
         if sampled or track_best or is_oss:
             spectrum = transforms.fourier_transform(x)
         if track_best:
-            loss = metrics.mse(spectrum, far)
+            loss = metrics.mse(spectrum, far) if selection_loss is None else selection_loss(x)
             better = loss < best_loss
             best = torch.where(better[..., None, None], x, best)
             best_step = torch.where(better, i + 1, best_step)
@@ -535,7 +541,9 @@ def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
     results = {key: torch.stack(values) for key, values in results.items()}
     results['iterations'] = torch.tensor(steps, device=x.device)
     if track_best:
-        results.update(x_best=best, best_mse_fourier=best_loss, best_iteration=best_step)
+        best_mse = best_loss if selection_loss is None else metrics.mse(transforms.fourier_transform(best), far)
+        results.update(x_best=best, best_mse_fourier=best_mse,
+                       best_selection_loss=best_loss, best_iteration=best_step)
     if is_oss:
         shape = (0, *near.shape[:2])
         results['oss_stage_best_r_factor'] = torch.stack(stage_scores) if stage_scores else near.new_empty(shape)
@@ -583,6 +591,8 @@ def run_restarts(magnitudes, support=None, n_restarts=4, generator=None,
     if is_oss:
         candidate_spectrum = transforms.fourier_transform(candidates)
         losses = metrics.fourier_r_factor(candidate_spectrum, expanded[1]).reshape(n, n_restarts, c)
+    elif kwargs.get('selection_loss') is not None:
+        losses = histories['best_selection_loss'].reshape(n, n_restarts, c)
     else:
         losses = histories['best_mse_fourier'].reshape(n, n_restarts, c)
     selected_loss, selected = losses.min(dim=1)
@@ -592,6 +602,10 @@ def run_restarts(magnitudes, support=None, n_restarts=4, generator=None,
     if is_oss:
         candidate_mse = metrics.mse(candidate_spectrum, expanded[1]).reshape(n, n_restarts, c)
         diagnostics['r_factor_fourier'] = selected_loss
+        diagnostics['mse_fourier'] = candidate_mse.gather(1, selected[:, None]).squeeze(1)
+    elif kwargs.get('selection_loss') is not None:
+        diagnostics['selection_loss'] = selected_loss
+        candidate_mse = histories['best_mse_fourier'].reshape(n, n_restarts, c)
         diagnostics['mse_fourier'] = candidate_mse.gather(1, selected[:, None]).squeeze(1)
     else:
         diagnostics['mse_fourier'] = selected_loss

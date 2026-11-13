@@ -4,3 +4,4 @@ from . import noise
 from . import retrieval
 from . import supports
 from . import transforms
+from . import optimization

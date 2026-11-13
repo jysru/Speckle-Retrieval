@@ -74,6 +74,124 @@ optimizes only phase. It can stagnate at local minima; try multiple starts and
 compare residuals. No algorithm here guarantees unique recovery of arbitrary
 fields from two intensity measurements.
 
+## Automatic-differentiation reconstruction
+
+`speckleret.torch.optimization` contains the reconstruction API.
+`initializers.gradient_descent` and `initializers.PhaseOnlyOptimizer` remain
+compatible aliases. `optimization.reconstruct()` returns `(field, diagnostics)`;
+the older wrapper still returns a field or `(field, scalar_loss_list)`.
+
+A useful workflow is several RAAR starts followed by AD refinement:
+
+```python
+from speckleret.torch import optimization
+
+field, diagnostics = optimization.hybrid_reconstruct(
+    (near, far), support,
+    n_restarts=4, projection_iter=100, refinement_iter=20,
+    optimizer_class=torch.optim.LBFGS,
+    optimizer_kwargs={'max_iter': 5, 'history_size': 10,
+                      'line_search_fn': 'strong_wolfe'},
+    generator=torch.Generator(device=device).manual_seed(11),
+)
+print('Before AD:', diagnostics['projection_loss'].cpu())
+print('After AD:', diagnostics['refinement']['final_loss'].cpu())
+```
+
+Projection candidates are scored with the same detector objective used during
+refinement, including masks, confidence weights, gains, and backgrounds. Each
+image/channel selects its own candidate. Refinement returns its per-image best
+by default, including initialization, so its objective cannot worsen. This does
+not guarantee better reference-field accuracy or unique recovery. Hybrid
+initialization currently requires equal-size Fourier-related planes; for a
+custom forward model, call `reconstruct(init=...)` directly.
+
+The AD parameterizations are:
+
+- Phase-only (default): fixed calibrated near-field amplitude and learned phase.
+- `optimize_amplitude=True`: learned real and imaginary field components, with
+  soft near- and far-field data fidelity. No smooth-phase prior is imposed.
+  Both planes have equal objective weight by default; `plane_weights=(w_near,
+  w_far)` adjusts their influence. Phase-only fitting defaults to `(0,1)`.
+
+`support` is the object mask. Separate `masks=(near_mask, far_mask)` are boolean
+**detector** masks, broadcastable to their observations; masked NaNs are ignored.
+`weights=(near_weights, far_weights)` supplies finite nonnegative confidence
+weights, with zero weight equivalent to a missing pixel. Each plane's loss is a
+weighted spatial mean, then the plane weights are normalized by their sum.
+Partially missing near amplitudes are initialized from that image's valid mean;
+if they should be inferred rather than fixed to a guess, enable amplitude fitting.
+Every image/channel must have observations in at least one weighted plane.
+
+Available `loss_type` values are normalized `amplitude_mse`, `intensity_mse`,
+`huber_amplitude`, `huber_intensity`, `pearson_amplitude`, `pearson_intensity`, and
+`poisson`. Huber residuals are normalized by the target RMS and use a configurable
+`huber_delta` (default 1). Pearson uses the same population-correlation convention
+as the metrics module, extended to confidence weights. Constant-image correlation
+is defined as zero; a completely unobserved plane contributes zero loss.
+
+`input_type='amplitude'` is the default. `input_type='intensity'` accepts measured
+sensor intensities. `input_type='counts'` is required for Poisson fitting. All
+three interfaces use the explicit detector model
+`expected_intensity = gain * abs(propagated_field)**2 + background`, with
+`gains=(g_near,g_far)` and `backgrounds=(b_near,b_far)` broadcastable to each
+plane. Defaults are unit gain and zero background. Corrections are applied only
+for initialization; the likelihood still fits the original measurements.
+
+For example, simulate count data and fit both amplitude and phase:
+
+```python
+counts = tuple(torch.poisson(100 * a.square()) for a in (near, far))
+field, diagnostics = optimization.reconstruct(
+    counts, support,
+    input_type='counts', loss_type='poisson',
+    gains=(100., 100.), backgrounds=(0., 0.),
+    optimize_amplitude=True, max_iter=200,
+    initialization='random',
+    generator=torch.Generator(device=device).manual_seed(12),
+)
+```
+
+The Poisson objective is mean weighted generalized KL divergence, equivalent to
+Poisson negative log likelihood after subtracting a data-only constant. Zero
+counts are handled explicitly. Do not label normalized, dark-subtracted amplitude
+images as raw counts. Choose a Gaussian/robust loss for data that do not follow
+the count model; arbitrary Gaussian noise added to counts is not pure Poisson.
+
+`forward_model(field)` can provide any deterministic differentiable propagation
+with NCHW output, including a different detector height/width, provided N,C and
+measurement dimensions match. It must act independently on images/channels for
+per-image selection to be meaningful. Only field parameters are optimized;
+operator modules must have their parameters frozen. Joint calibration fitting is
+not enabled implicitly. In particular, a free far-field shift is confounded with
+an object-plane phase ramp. Legacy cyclic loss requires a matching
+`inverse_model` for custom propagation and currently only supports complete,
+unweighted, calibrated phase-only amplitude data.
+
+Both Adam and L-BFGS have explicit support. Other ordinary first-order optimizer
+classes work through `optimizer_class`. L-BFGS uses a closure and strong-Wolfe
+line search by default. One outer update can evaluate the model many times, and
+stock PyTorch L-BFGS shares one line search and curvature history across the
+batch; it is not an independently vectorized optimizer. First-order objectives
+are summed across images/channels so SGD updates do not change with batch size.
+No default phase weight decay is introduced.
+
+Diagnostics stay on the input device: `loss` has shape `[samples,N,C]`,
+`iterations` identifies sampled updates, and `initial_loss`, `final_loss`,
+`best_loss`, and `best_iteration` are per N,C. Histories include initialization
+and the returned field. `iterations_completed` counts outer optimizer updates;
+`function_evaluations` counts objective evaluations, including L-BFGS closures
+and diagnostics. Histories are objective values, not necessarily Fourier NMSE.
+`return_best=False` returns the last iterate instead of combining per-image best
+fields. Optional `rel_tol`, `patience`, and `check_every` stop only when **all**
+images stall; those periodic checks synchronize the device. Fixed iteration
+counts remain the default. Logging and schedulers remain opt-in.
+
+The hybrid diagnostics contain the selected restart, projection objective,
+projection histories, and nested refinement diagnostics. The projection runner's
+new `selection_loss(field)` hook allows custom per-image candidate ranking while
+keeping its reported Fourier MSE separate from the selection objective.
+
 ## Losses, histories, and selection
 
 - `amplitude_mse` (default): mean per-image amplitude MSE divided by mean target
@@ -237,6 +355,10 @@ The distinction between angular-spectrum and Fresnel propagation follows the
 python -m pytest -q
 python -m benchmarks.torch_reconstruction --method phase --device cpu
 python -m benchmarks.torch_reconstruction --method raar --device cuda --restarts 4
+python -m benchmarks.torch_reconstruction --method lbfgs --iterations 20 --lbfgs-inner-iterations 5
+python -m benchmarks.torch_reconstruction --method hybrid --optimizer lbfgs --refinement-iterations 20
+# Noisy two-plane counts, soft amplitude, and missing far-field pixels:
+python -m benchmarks.torch_reconstruction --method hybrid --loss poisson --photons-per-peak 1000 --optimize-amplitude --detector-mask-fraction 0.1
 # Original real/nonnegative OSS mode with Poisson-corrupted intensities:
 python -m benchmarks.torch_reconstruction --method oss --object-type positive --iterations 2000 --photons-per-peak 1000
 # Sensitivity to intensity noise and a one-pixel far-field calibration error:
@@ -252,7 +374,12 @@ The benchmark emits JSON with configuration, versions, synchronized wall time,
 per-image raw measured and ideal Fourier NMSE, support-masked Fourier NMSE,
 scaled Fourier R factor, and overlap with the known synthetic field inside the
 support. Success fraction is explicitly based on the raw measurement NMSE threshold;
-it is not a claim of unique or experimentally verified phase recovery. Timing
-includes reconstruction diagnostics but excludes synthetic data generation.
+it is not a claim of unique or experimentally verified phase recovery. An
+`observed_nmse` value also excludes masked detector pixels. When Poisson noise is
+requested, both planes receive noisy counts with explicit per-plane gains. AD
+reports include objective-evaluation counts and initial/final objectives; compare
+elapsed time and objective quality rather than equating L-BFGS outer updates
+with Adam updates. Hybrid timings include both projection and refinement.
+Timing includes reconstruction diagnostics but excludes synthetic data generation.
 Compare configurations on the same machine; the benchmark makes no GPU speedup
 claim. Experimental calibration and real-data validation remain separate work.
