@@ -94,7 +94,7 @@ field, diagnostics = optimization.hybrid_reconstruct(
                       'line_search_fn': 'strong_wolfe'},
     generator=torch.Generator(device=device).manual_seed(11),
 )
-print('Before AD:', diagnostics['projection_loss'].cpu())
+print('Before AD:', diagnostics['refinement']['initial_loss'].cpu())
 print('After AD:', diagnostics['refinement']['final_loss'].cpu())
 ```
 
@@ -105,6 +105,8 @@ by default, including initialization, so its objective cannot worsen. This does
 not guarantee better reference-field accuracy or unique recovery. Hybrid
 initialization currently requires equal-size Fourier-related planes; for a
 custom forward model, call `reconstruct(init=...)` directly.
+Phase-to-field conversion can introduce rounding differences between the raw
+`projection_loss` and `refinement.initial_loss`, especially near numerical zero.
 
 The AD parameterizations are:
 
@@ -113,6 +115,11 @@ The AD parameterizations are:
   soft near- and far-field data fidelity. No smooth-phase prior is imposed.
   Both planes have equal objective weight by default; `plane_weights=(w_near,
   w_far)` adjusts their influence. Phase-only fitting defaults to `(0,1)`.
+
+If amplitude fitting has no explicit initial field and its near-plane guess is
+entirely zero, far-plane energy provides a nonzero seed. This avoids the zero
+stationary point of intensity objectives; for nonunitary custom models this is
+only an initialization heuristic. Explicit initial fields are respected.
 
 `support` is the object mask. Separate `masks=(near_mask, far_mask)` are boolean
 **detector** masks, broadcastable to their observations; masked NaNs are ignored.

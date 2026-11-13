@@ -220,6 +220,27 @@ def test_operator_modules_must_be_fixed_and_are_not_implicitly_optimized():
         opt.reconstruct((torch.ones(1, 1, 3, 3),)*2, forward_model=operator)
 
 
+def test_explicit_optimizer_kwargs_preserve_optimizer_defaults():
+    seen = []
+    class CaptureAdam(torch.optim.Adam):
+        def __init__(self, parameters, **kwargs):
+            seen.append(kwargs)
+            super().__init__(parameters, **kwargs)
+    measurements = (torch.ones(1, 1, 3, 3),)*2
+    opt.reconstruct(measurements, optimizer_class=CaptureAdam, optimizer_kwargs={}, max_iter=0)
+    opt.reconstruct(measurements, optimizer_class=CaptureAdam, max_iter=0)
+    assert seen == [{}, {'lr': .1}]
+
+
+@pytest.mark.parametrize('loss_type', opt.LOSS_TYPES)
+def test_nonfinite_initial_forward_model_fails_before_optimization(loss_type):
+    with pytest.raises(ValueError, match='Initial reconstruction objective'):
+        opt.reconstruct((torch.ones(1, 1, 3, 3),)*2,
+                         forward_model=lambda field: field*float('nan'), max_iter=1,
+                         input_type='counts' if loss_type == 'poisson' else 'amplitude',
+                         loss_type=loss_type)
+
+
 def test_custom_projection_selection_does_not_relabel_actual_fourier_mse():
     near = torch.ones(2, 1, 2, 2)
     def scorer(field):

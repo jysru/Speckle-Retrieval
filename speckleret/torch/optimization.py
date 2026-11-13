@@ -18,7 +18,7 @@ LOSS_TYPES = ('amplitude_mse', 'intensity_mse', 'huber_amplitude',
 
 
 def _pair(value, name):
-    if len(value) != 2:
+    if value is None or not hasattr(value, '__len__') or len(value) != 2:
         raise ValueError(f'{name} must contain near and far plane values')
     return tuple(value)
 
@@ -113,7 +113,9 @@ class MeasurementLoss(nn.Module):
         if self.loss_type.endswith('intensity') or self.loss_type == 'intensity_mse':
             predicted = rate
         else:
-            predicted = torch.where(rate > 0, rate.clamp_min(torch.finfo(rate.dtype).tiny).sqrt(), 0)
+            # Preserve NaNs from a broken forward model instead of treating
+            # them as dark pixels; only the exact-zero derivative needs fixing.
+            predicted = torch.where(rate == 0, 0, rate.clamp_min(torch.finfo(rate.dtype).tiny).sqrt())
         target = self.target_values
         if self.loss_type.startswith('pearson'):
             dx = predicted - self._mean(predicted)[..., None, None]
@@ -122,7 +124,9 @@ class MeasurementLoss(nn.Module):
             tiny = torch.finfo(rate.dtype).tiny
             denominator = vx.clamp_min(tiny).sqrt() * vy.clamp_min(tiny).sqrt()
             corr = torch.where((vx > 0) & (vy > 0), self._mean(dx*dy) / denominator.clamp_min(tiny), 0)
-            return torch.where(self.weight.sum((-2, -1)) > 0, 1 - corr.clamp(-1, 1), 0)
+            loss = torch.where(torch.isfinite(vx) & torch.isfinite(vy),
+                                1-corr.clamp(-1, 1), float('nan'))
+            return torch.where(self.weight.sum((-2, -1)) > 0, loss, 0)
         scale = self.target_scale
         if self.loss_type.startswith('huber'):
             residual = (predicted-target) / scale.sqrt()[..., None, None]
@@ -185,6 +189,8 @@ class ComplexFieldOptimizer(nn.Module):
     """Supported Cartesian complex field; both real and imaginary parts can move."""
     def __init__(self, init_field, support=None):
         super().__init__()
+        if init_field.ndim != 4 or not torch.is_complex(init_field):
+            raise ValueError('ComplexFieldOptimizer expects a complex NCHW field')
         self.real = nn.Parameter(init_field.real.detach().clone())
         self.imag = nn.Parameter(init_field.imag.detach().clone())
         self.register_buffer('support', torch.ones_like(init_field.real, dtype=torch.bool)
@@ -325,12 +331,15 @@ def reconstruct(measurements, support=None, *, input_type='amplitude',
         options = {'lr': 1., 'max_iter': 10, 'history_size': 10,
                    'line_search_fn': 'strong_wolfe', **options}
     else:
-        options.setdefault('lr', .1)
+        if optimizer_kwargs is None:
+            options['lr'] = .1
     optimizer = optimizer_class(model.parameters(), **options)
     scheduler = None if scheduler_factory is None else scheduler_factory(optimizer)
     with torch.set_grad_enabled(not is_lbfgs):
         current, value = evaluate()
     initial_loss = value.detach().clone()
+    if not torch.isfinite(initial_loss).all():
+        raise ValueError('Initial reconstruction objective is not finite; check the field and forward model')
     best, best_loss = current.detach().clone(), initial_loss.clone()
     best_step = torch.zeros_like(best_loss, dtype=torch.long)
     previous_check = best_loss.clone()
