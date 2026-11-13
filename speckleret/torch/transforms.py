@@ -1,254 +1,164 @@
+"""Centered unitary Fourier transforms and sampled free-space propagation."""
+from functools import lru_cache
+import warnings
+
 import torch
 import torch.nn.functional as F
 
 
-def apply_support(field: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """
-    Apply a boolean mask on a 4D tensor and zero out the elements where mask is False.
-    
-    Args:
-        field: input tensor of any dtype/shape (e.g., [N, C, H, W])
-        mask: boolean tensor of the same shape as field
-    
-    Returns:
-        Tensor with elements zeroed out where mask is False.
-    """
-    if field.shape != mask.shape:
-        raise ValueError("field and mask must have the same shape")
-    
-    # Create a copy if you want to avoid modifying input in-place
-    result = field.clone()
-    result[~mask] = 0
-    return result
+def apply_support(field, mask):
+    """Zero values outside a boolean mask broadcastable to the field."""
+    return torch.where(mask, field, 0)
 
 
-def crop_to_size(img: torch.Tensor, target_size: tuple[int, int]) -> torch.Tensor:
-    """
-    Crop the center H, W part of an image tensor [N, C, H, W] to newsize (new_H, new_W).
-    """
-    if img.ndim != 4:
-        raise ValueError(f"Expected 4D tensor [N,C,H,W], got {img.shape}")
-
-    _, _, H, W = img.shape
-    new_H, new_W = target_size
-
-    if new_H > H or new_W > W:
-        raise ValueError("newsize must be smaller than or equal to original size")
-
-    crop_top = (H - new_H) // 2
-    crop_left = (W - new_W) // 2
-
-    return img[..., crop_top:crop_top + new_H, crop_left:crop_left + new_W]
+def _size(img, target_size):
+    if img.ndim != 4 or len(target_size) != 2 or min(target_size) <= 0:
+        raise ValueError('Expected NCHW input and positive (H,W) target size')
 
 
-def pad_to_size(img: torch.Tensor, target_size: tuple[int, int]) -> torch.Tensor:
-    """
-    Pad a tensor of shape [N, C, H, W] with zeros to reach the target (H, W) size.
-    The original image is centered in the padded output.
-
-    Args:
-        img: input tensor [N, C, H, W]
-        target_size: (target_H, target_W)
-
-    Returns:
-        Padded tensor with shape [N, C, target_H, target_W]
-    """
-    if img.ndim != 4:
-        raise ValueError(f"Expected 4D tensor [N,C,H,W], got {img.shape}")
-
-    _, _, H, W = img.shape
-    target_H, target_W = target_size
-
-    if target_H < H or target_W < W:
-        raise ValueError("Target size must be greater than or equal to the original size")
-
-    pad_top = (target_H - H) // 2
-    pad_bottom = target_H - H - pad_top
-    pad_left = (target_W - W) // 2
-    pad_right = target_W - W - pad_left
-
-    # Padding format: (left, right, top, bottom)
-    padding = (pad_left, pad_right, pad_top, pad_bottom)
-    padded_img = F.pad(img, padding, mode='constant', value=0)
-    return padded_img
+def crop_to_size(img, target_size):
+    _size(img, target_size)
+    h, w = img.shape[-2:]
+    nh, nw = target_size
+    if nh > h or nw > w:
+        raise ValueError('Crop target exceeds input size')
+    top, left = (h - nh) // 2, (w - nw) // 2
+    return img[..., top:top + nh, left:left + nw]
 
 
-def resize_image(img: torch.Tensor, target_size: tuple[int, int]) -> torch.Tensor:
-    """
-    Resize an image tensor [N, C, H, W] to target_size (target_H, target_W).
-    Pads if target_size > current size, crops if smaller.
-    """
-    _, _, H, W = img.shape
-    target_H, target_W = target_size
-
-    if target_H == H and target_W == W:
-        return img  # no change
-
-    if target_H > H or target_W > W:
-        # Pad to target size
-        return pad_to_size(img, target_size)
-
-    if target_H < H or target_W < W:
-        # Crop to target size
-        return crop_to_size(img, target_size)
-
-    # If mixed cases (one dim larger, other smaller), do crop then pad or vice versa:
-    # For simplicity, crop then pad:
-    cropped = crop_to_size(img, (
-        min(H, target_H),
-        min(W, target_W)
-    ))
-    resized = pad_to_size(cropped, target_size)
-    return resized
+def pad_to_size(img, target_size):
+    _size(img, target_size)
+    h, w = img.shape[-2:]
+    dh, dw = target_size[0] - h, target_size[1] - w
+    if dh < 0 or dw < 0:
+        raise ValueError('Padding target is smaller than input')
+    return F.pad(img, (dw // 2, dw - dw // 2, dh // 2, dh - dh // 2))
 
 
-def normalize_field(field: torch.Tensor, norm_type: str = 'energy') -> torch.Tensor:
-    """
-    Normalize NCHW tensor fields per sample & channel by energy or max over H,W.
-    
-    Args:
-        field: complex or real tensor [N, C, H, W]
-        norm_type: 'energy' or 'max' (case insensitive)
-        
-    Returns:
-        normalized tensor of the same shape
-    """
+def resize_image(img, target_size):
+    """Center crop and/or zero pad each axis independently (no resampling)."""
+    _size(img, target_size)
+    h, w = img.shape[-2:]
+    cropped = crop_to_size(img, (min(h, target_size[0]), min(w, target_size[1])))
+    return pad_to_size(cropped, target_size)
+
+
+def normalize_field(field, norm_type='energy'):
     norm_type = norm_type.lower()
-    if norm_type not in ('energy', 'max'):
-        raise ValueError("norm_type must be 'energy' or 'max'")
-
-    abs_field = field.abs()
-    
     if norm_type == 'energy':
-        # Compute energy per N,C over H,W
-        energy = torch.square(abs_field).sum(dim=(-2, -1), keepdim=True)
-        norm_factor = torch.sqrt(energy)
-    else:  # 'max'
-        # Compute max magnitude per N,C over H,W
-        norm_factor = abs_field.amax(dim=(-2, -1), keepdim=True)
-    
-    # Avoid division by zero
-    norm_factor = torch.where(norm_factor == 0, torch.tensor(1., device=field.device, dtype=norm_factor.dtype), norm_factor)
-    
-    return field / norm_factor
+        norm = field.abs().square().sum(dim=(-2, -1), keepdim=True).sqrt()
+    elif norm_type == 'max':
+        norm = field.abs().amax(dim=(-2, -1), keepdim=True)
+    else:
+        raise ValueError("norm_type must be 'energy' or 'max'")
+    return field / torch.where(norm > 0, norm, 1)
 
 
-def fourier_transform(field: torch.Tensor, norm: str = 'ortho') -> torch.Tensor:
+def fourier_transform(field, norm='ortho'):
+    """Centered FFT2 on the last two dimensions, including odd sizes."""
+    return torch.fft.fftshift(
+        torch.fft.fft2(torch.fft.ifftshift(field, dim=(-2, -1)), norm=norm),
+        dim=(-2, -1),
+    )
+
+
+def inverse_fourier_transform(field, norm='ortho'):
+    return torch.fft.fftshift(
+        torch.fft.ifft2(torch.fft.ifftshift(field, dim=(-2, -1)), norm=norm),
+        dim=(-2, -1),
+    )
+
+
+def _spacings(pixel_size):
+    dy, dx = (pixel_size, pixel_size) if isinstance(pixel_size, (int, float)) else pixel_size
+    if min(dy, dx) <= 0:
+        raise ValueError('Pixel spacings must be positive (meters)')
+    return float(dy), float(dx)
+
+
+def fourier_grids(field, pixel_size):
+    """Return x,y,kx,ky grids; pixel_size is scalar or (dy,dx) in meters."""
+    h, w = field.shape[-2:]
+    dy, dx = _spacings(pixel_size)
+    kwargs = dict(device=field.device, dtype=field.real.dtype)
+    x = (torch.arange(w, **kwargs) - w // 2) * dx
+    y = (torch.arange(h, **kwargs) - h // 2) * dy
+    kx = 2 * torch.pi * torch.fft.fftshift(torch.fft.fftfreq(w, dx, **kwargs))
+    ky = 2 * torch.pi * torch.fft.fftshift(torch.fft.fftfreq(h, dy, **kwargs))
+    yg, xg = torch.meshgrid(y, x, indexing='ij')
+    kyg, kxg = torch.meshgrid(ky, kx, indexing='ij')
+    return xg, yg, kxg, kyg
+
+
+@lru_cache(maxsize=16)
+def _transfer(h, w, dz, wavelength, dy, dx, device, dtype, method, evanescent):
+    if wavelength <= 0:
+        raise ValueError('Wavelength must be positive (meters)')
+    if method not in ('angular_spectrum', 'fresnel'):
+        raise ValueError("method must be 'angular_spectrum' or 'fresnel'")
+    if evanescent not in ('discard', 'decay'):
+        raise ValueError("evanescent must be 'discard' or 'decay'")
+    field = torch.empty((h, w), device=device, dtype=dtype)
+    _, _, kx, ky = fourier_grids(field, (dy, dx))
+    k = 2 * torch.pi / wavelength
+    transverse = kx.square() + ky.square()
+    if dz == 0:
+        return torch.ones_like(kx, dtype=torch.complex128 if dtype == torch.float64 else torch.complex64)
+    if method == 'fresnel':
+        return torch.exp(1j * dz * (k - transverse / (2 * k)))
+    val = k * k - transverse
+    if evanescent == 'decay':
+        if dz < 0:
+            raise ValueError('Backward evanescent amplification is unstable; use discard')
+        kz = torch.sqrt(val.to(torch.complex128 if dtype == torch.float64 else torch.complex64))
+        return torch.exp(1j * dz * kz)
+    return torch.where(val >= 0, torch.exp(1j * dz * val.clamp_min(0).sqrt()), 0)
+
+
+def propagation_transfer_function(field, dz=0., wavelength=1064e-9,
+                                  pixel_size=5.04e-6, method='angular_spectrum',
+                                  evanescent='discard'):
+    """Cached HxW transfer function. Treat returned cached tensors as read-only.
+
+    Static propagation parameters are Python scalars; distance/wavelength and
+    sampling are in meters. Cache is bounded to 16 configurations; call
+    clear_propagation_cache() to release retained device tensors.
     """
-    Compute the 2D Fourier transform of complex-valued input images in [N, C, H, W],
-    applying FFT over the last two dims (H, W), with fftshift before and after.
-    Returns the normalized FFT result.
-    """
+    dy, dx = _spacings(pixel_size)
+    return _transfer(*field.shape[-2:], float(dz), float(wavelength), dy, dx,
+                     field.device, field.real.dtype, method, evanescent)
+
+
+def clear_propagation_cache():
+    _transfer.cache_clear()
+
+
+def angular_spectrum_transform(field, transfer_function=None, dz=0.,
+                               wavelength=1064e-9, pixel_size=5.04e-6,
+                               evanescent='discard'):
+    """Scalar angular-spectrum propagation; evanescent modes discarded by default."""
     if not torch.is_complex(field):
-        raise ValueError("Input must be a complex-valued tensor.")
-
-    # Apply fftshift before FFT
-    field = torch.fft.fftshift(field, dim=(-2, -1))
-
-    # Compute 2D FFT over H and W
-    ft = torch.fft.fftn(field, dim=(-2, -1), norm=norm)
-
-    # Apply fftshift after FFT
-    ft = torch.fft.fftshift(ft, dim=(-2, -1))
-
-    return ft
+        raise ValueError('Input field must be complex')
+    if transfer_function is None:
+        transfer_function = propagation_transfer_function(
+            field, dz, wavelength, pixel_size, evanescent=evanescent)
+    return inverse_fourier_transform(fourier_transform(field) * transfer_function)
 
 
-def inverse_fourier_transform(field: torch.Tensor, norm: str = 'ortho') -> torch.Tensor:
+def fresnel_propagation(field, dz=0., wavelength=1064e-9, pixel_size=5.04e-6):
+    """Paraxial Fresnel propagation (same input/output pixel spacing)."""
+    transfer = propagation_transfer_function(field, dz, wavelength, pixel_size, method='fresnel')
+    return angular_spectrum_transform(field, transfer_function=transfer)
+
+
+def fresnel_transform(field, propagator=None, dz=0., wavelength=1064e-9, pixel_size=5.04e-6):
+    """Compatibility alias for historical angular-spectrum propagation.
+
+    The legacy propagator argument is a phase in radians, not a complex transfer
+    function. Use angular_spectrum_transform or fresnel_propagation in new code.
     """
-    Compute the 2D inverse Fourier transform of complex-valued input images in [N, C, H, W],
-    applying inverse FFT over the last two dims (H, W), with ifftshift before and after.
-    Returns the appropriately scaled inverse FFT result.
-    """
-    if not torch.is_complex(field):
-        raise ValueError("Input must be a complex-valued tensor.")
-
-    # Apply ifftshift before iFFT
-    field = torch.fft.ifftshift(field, dim=(-2, -1))
-
-    # Compute 2D inverse FFT over H and W
-    ift = torch.fft.ifftn(field, dim=(-2, -1), norm=norm)
-
-    # Apply ifftshift after iFFT
-    ift = torch.fft.ifftshift(ift, dim=(-2, -1))
-
-    return ift
-
-
-def fresnel_transform(field: torch.Tensor, propagator: torch.Tensor = None, dz: float = 0.0, wavelength: float = 1064e-9, pixel_size: float = 5.04e-6):
-    """
-    Fresnel propagation for a batch of fields [N, C, H, W] applied on last two dims.
-
-    Args:
-        field: complex tensor [N, C, H, W]
-        dz: propagation distance
-        wavelength: wavelength in meters
-        pixel_size: pixel size in meters
-
-    Returns:
-        propagated field tensor [N, C, H, W]
-    """
-    if not torch.is_complex(field):
-        raise ValueError("Input field must be a complex tensor")
-
-    N, C, H, W = field.shape
-
-    if propagator is None:
-        # Get Fourier grids (kx, ky) on CPU or GPU as per field device
-        _, _, kx, ky = fourier_grids(field, pixel_size=pixel_size)
-        kx = kx.to(field.device)
-        ky = ky.to(field.device)
-
-         # Compute the propagator phase factor
-        k = 2 * torch.pi / wavelength
-        val = 4 * torch.square(k) - torch.square(kx) - torch.square(ky)
-        # Clamp negative inside sqrt to zero to avoid NaNs (evanescent waves)
-        val = torch.clamp(val, min=0)
-        propagator = dz * torch.sqrt(val)  # shape [H,W]
-
-    # FFT with fftshift on last two dims
-    ft = fourier_transform(field)
-
-    # Apply the propagator: expand dims to broadcast on N and C
-    ft = ft * torch.exp(1j * propagator)[None, None, :, :]
-
-    # Inverse FFT with ifftshift on last two dims
-    propagated = inverse_fourier_transform(ft)
-
-    return propagated
-
-
-def fourier_grids(field: torch.Tensor, pixel_size: float):
-    """
-    Compute Fourier coordinate grids for HxW images in tensor [N,C,H,W].
-
-    Args:
-        field: input tensor [N,C,H,W]
-        pixel_size: spatial pixel size (meters)
-
-    Returns:
-        x, y, kx, ky: coordinate grids of shape [H,W]
-    """
-    H, W = field.shape[-2], field.shape[-1]
-    dx = pixel_size
-    # Spatial coordinates (centered)
-    lim_x = W / 2 * dx
-    x = torch.linspace(-lim_x, lim_x - dx, W)
-    y = torch.linspace(-lim_x, lim_x - dx, H)
-    y_grid, x_grid = torch.meshgrid(y, x, indexing='ij')  # shape [H,W]
-
-    # Fourier (frequency) domain coordinates
-    grid_size_x = dx * W
-    grid_size_y = dx * H
-    dnx = 1 / grid_size_x
-    dny = 1 / grid_size_y
-
-    lim_nx = W / 2 * dnx
-    lim_ny = H / 2 * dny
-
-    kx_vals = torch.linspace(-lim_nx, lim_nx - dnx, W) * 2 * torch.pi
-    ky_vals = torch.linspace(-lim_ny, lim_ny - dny, H) * 2 * torch.pi
-    ky_grid, kx_grid = torch.meshgrid(ky_vals, kx_vals, indexing='ij')  # shape [H,W]
-
-    return x_grid, y_grid, kx_grid, ky_grid
-
+    warnings.warn('fresnel_transform historically implements angular spectrum; '
+                  'use angular_spectrum_transform or fresnel_propagation',
+                  DeprecationWarning, stacklevel=2)
+    transfer = None if propagator is None else torch.exp(1j * propagator)
+    return angular_spectrum_transform(field, transfer, dz, wavelength, pixel_size)

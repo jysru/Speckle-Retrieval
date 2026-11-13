@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from waveoptics.metrics.numpy import pearson
-from waveoptics.plots.plots import complex_to_hsv
+from speckleret.metrics import pearson
+from speckleret.plots import complex_to_hsv
 
 import speckleret.transforms as transforms
 import speckleret.metrics as metrics
@@ -296,7 +296,7 @@ def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, window
 
     plt.subplot(2, 3, 3)
     plt.title('Retrieved NF: ' + r'$\hat{x}$')
-    plt.imshow(complex_to_hsv(x_hat[cropped, cropped], rmin=0, rmax=np.max(np.power(np.abs(x_hat), power)), power=power))
+    plt.imshow(complex_to_hsv(np.abs(x_hat[cropped, cropped]) ** power * np.exp(1j * np.angle(x_hat[cropped, cropped])), rmin=0, rmax=np.max(np.power(np.abs(x_hat), power))))
     plt.axis('off')
 
     plt.subplot(2, 3, 4)
@@ -310,7 +310,7 @@ def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, window
     plt.title('Retrieved FF: ' + r'$|\hat{y}|$' + f'^{power}')
 
     plt.subplot(2, 3, 6)
-    plt.imshow(complex_to_hsv(y_hat[cropped_ff, cropped_ff], rmin=0, rmax=np.max(np.power(np.abs(y_hat), power)), power=power))
+    plt.imshow(complex_to_hsv(np.abs(y_hat[cropped_ff, cropped_ff]) ** power * np.exp(1j * np.angle(y_hat[cropped_ff, cropped_ff])), rmin=0, rmax=np.max(np.power(np.abs(y_hat), power))))
     plt.axis('off')
     plt.title('Retrieved FF: ' + r'$\hat{y}$')
 

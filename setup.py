@@ -1,6 +1,7 @@
+from pathlib import Path
 import setuptools
 
-with open("README.md", "r") as fh:
+with (Path(__file__).parent / "README.md").open(encoding="utf-8") as fh:
     long_description = fh.read()
 
 setuptools.setup(
@@ -13,6 +14,9 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/jysru/Speckle-Retrieval",
     packages=setuptools.find_packages(),
+    python_requires=">=3.10",
+    install_requires=["numpy", "scipy", "matplotlib", "torch>=2.0", "scikit-image"],
+    extras_require={"dev": ["pytest>=7"]},
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

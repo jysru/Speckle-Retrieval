@@ -1,101 +1,75 @@
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.ndimage.filters import gaussian_filter
-
+"""Support masks and cached Gaussian smoothing for NCHW fields."""
+from functools import lru_cache
+import math
 import torch
 import torch.nn.functional as F
 
 
-def pixels_meshgrids(size: int, center: bool = True, return_polar: bool = True, device="cpu", dtype=torch.float):
-    grid = torch.arange(size, dtype=dtype, device=device)
+def pixels_meshgrids(size, center=True, return_polar=True, device='cpu', dtype=torch.float):
+    h, w = (size, size) if isinstance(size, int) else size
+    x = torch.arange(w, dtype=dtype, device=device)
+    y = torch.arange(h, dtype=dtype, device=device)
     if center:
-        grid = grid - float(size) / 2 + 0.5
-    Y, X = torch.meshgrid(grid, grid, indexing='ij')
-
-    if return_polar:
-        R = torch.sqrt(torch.square(X) + torch.square(Y))
-        T = torch.atan2(Y, X)
-        return X, Y, R, T
-    else:
-        return X, Y
-    
-
-def threshold_support(array: torch.Tensor, threshold: float = 0.01) -> torch.Tensor:
-    """
-    Compute a binary support mask of shape [N, C, H, W],
-    where the squared normalized amplitude exceeds the threshold.
-    """
-    if array.ndim < 4:
-        raise ValueError(f"Input must be 4D [N, C, H, W], got shape {array.shape}")
-    
-    abs_val = array.abs()
-    norm_abs = abs_val / abs_val.amax(dim=(-2, -1), keepdim=True)
-    support = (norm_abs ** 2 >= threshold)
-    return support
-    
-
-def square_support(array: torch.Tensor, size: int, offsets: tuple[float, float] = None) -> torch.Tensor:
-    """Binary square-shaped support mask"""
-    H, W = array.shape[-2:]
-    X, Y = pixels_meshgrids(H, center=True, return_polar=False, device=array.device)
-
-    if offsets is not None:
-        X = X - offsets[0]
-        Y = Y - offsets[1]
-
-    mask = (X.abs() <= size / 2) & (Y.abs() <= size / 2)
-    return mask.expand(*array.shape[:-2], H, W)
+        x, y = x - (w - 1) / 2, y - (h - 1) / 2
+    Y, X = torch.meshgrid(y, x, indexing='ij')
+    return (X, Y, (X.square() + Y.square()).sqrt(), torch.atan2(Y, X)) if return_polar else (X, Y)
 
 
-def disk_support(array: torch.Tensor, radius: float, offsets: tuple[float, float] = None) -> torch.Tensor:
-    """Binary circular support mask"""
-    H, W = array.shape[-2:]
-    X, Y, R, _ = pixels_meshgrids(H, center=True, device=array.device)
-
-    if offsets is not None:
-        X = X - offsets[0]
-        Y = Y - offsets[1]
-        R = torch.sqrt(X**2 + Y**2)
-
-    mask = (R <= radius)
-    return mask.expand(*array.shape[:-2], H, W)
+def threshold_support(array, threshold=0.01):
+    if array.ndim != 4 or not 0 <= threshold <= 1:
+        raise ValueError('Expected NCHW input and threshold in [0,1]')
+    intensity = array.abs().square()
+    maximum = intensity.amax(dim=(-2, -1), keepdim=True)
+    return (maximum > 0) & (intensity >= threshold * maximum)
 
 
-def shrinkwrap(field: torch.Tensor, filter_sigma: float = 1.0, threshold: float = 0.03) -> torch.Tensor:
-    """
-    Shrinkwrap support estimation per image (over H, W) for a 4D tensor [N, C, H, W].
-    Applies Gaussian filtering to squared amplitude and thresholds it.
-    """
-    if field.ndim != 4:
-        raise ValueError(f"Input must be 4D [N, C, H, W], got {field.shape}")
-
-    N, C, H, W = field.shape
-
-    # Compute normalized intensity (|field|^2 / max^2 per [N, C])
-    abs_val = field.abs()
-    norm = abs_val / abs_val.amax(dim=(-2, -1), keepdim=True).clamp_min(1e-12)
-    density = norm ** 2
-
-    # Build Gaussian kernel
-    ksize = int(2 * round(3 * filter_sigma) + 1)
-    kernel = _gaussian_kernel2d(ksize, filter_sigma, device=field.device, dtype=field.dtype)
-    kernel = kernel.view(1, 1, ksize, ksize).repeat(C * N, 1, 1, 1)  # Depthwise per image
-
-    # Prepare input for depthwise convolution: [N*C, 1, H, W]
-    input_reshaped = density.view(N * C, 1, H, W)
-
-    # Apply Gaussian blur with same padding
-    blurred = F.conv2d(input_reshaped, kernel, padding=ksize // 2, groups=1)
-    blurred = blurred.view(N, C, H, W)
-
-    # Threshold to get support mask
-    support = blurred >= threshold
-    return support
+def square_support(array, size, offsets=None):
+    X, Y = pixels_meshgrids(array.shape[-2:], return_polar=False,
+                           device=array.device, dtype=array.real.dtype)
+    ox, oy = (0, 0) if offsets is None else offsets
+    mask = ((X - ox).abs() <= size / 2) & ((Y - oy).abs() <= size / 2)
+    return mask.expand(array.shape)
 
 
-def _gaussian_kernel2d(kernel_size: int, sigma: float, device=None, dtype=None):
+def disk_support(array, radius, offsets=None):
+    X, Y = pixels_meshgrids(array.shape[-2:], return_polar=False,
+                           device=array.device, dtype=array.real.dtype)
+    ox, oy = (0, 0) if offsets is None else offsets
+    return ((X - ox).square() + (Y - oy).square() <= radius ** 2).expand(array.shape)
+
+
+@lru_cache(maxsize=16)
+def _gaussian_kernel2d(kernel_size, sigma, device=None, dtype=None):
     ax = torch.arange(kernel_size, device=device, dtype=dtype) - kernel_size // 2
-    xx, yy = torch.meshgrid(ax, ax, indexing="ij")
-    kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
-    kernel = kernel / kernel.sum()
-    return kernel
+    yy, xx = torch.meshgrid(ax, ax, indexing='ij')
+    kernel = torch.exp(-(xx.square() + yy.square()) / (2 * sigma ** 2))
+    return kernel / kernel.sum()
+
+
+def clear_gaussian_cache():
+    _gaussian_kernel2d.cache_clear()
+
+
+def gaussian_smoothing(field, sigma):
+    """Independent spatial blur per image/channel, preserving complex dtype."""
+    if sigma <= 0:
+        return field
+    h, w = field.shape[-2:]
+    ksize = int(math.ceil(6 * sigma)) | 1
+    kernel = _gaussian_kernel2d(ksize, float(sigma), field.device, field.real.dtype)[None, None]
+    def blur(part):
+        return F.conv2d(part.reshape(-1, 1, h, w), kernel,
+                        padding=ksize // 2).reshape(field.shape)
+    if torch.is_complex(field):
+        return torch.complex(blur(field.real), blur(field.imag))
+    return blur(field)
+
+
+def shrinkwrap(field, filter_sigma=1., threshold=0.03):
+    """Gaussian-blurred normalized intensity threshold, independently per image."""
+    if field.ndim != 4 or filter_sigma < 0 or not 0 <= threshold <= 1:
+        raise ValueError('Expected NCHW, nonnegative sigma and threshold in [0,1]')
+    intensity = field.abs().square()
+    maximum = intensity.amax(dim=(-2, -1), keepdim=True)
+    density = intensity / torch.where(maximum > 0, maximum, 1)
+    return (maximum > 0) & (gaussian_smoothing(density, filter_sigma) >= threshold)

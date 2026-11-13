@@ -1,24 +1,11 @@
-import numpy as np
-import matplotlib.pyplot as plt
-
-from waveoptics.metrics.numpy import pearson
-from waveoptics.plots.plots import complex_to_hsv
-
-import speckleret.plots as plots
-import speckleret.supports as supports
-
-import scipy.ndimage as ndi
+"""Batched projection algorithms and measurement-based reconstruction tracking."""
+import warnings
+from . import supports
 
 import torch
 from . import metrics
 from . import transforms
 from . import initializers
-
-import math
-
-import torch.nn.functional as F
-
-from typing import Callable, Dict, Tuple, Optional
 
 
 # Review paper: https://doi.org/10.1063/1.2403783
@@ -47,8 +34,6 @@ def P_S(
         raise ValueError("Input x must be complex tensor")
     if magnitude.shape != x.shape:
         raise ValueError("Magnitude shape must match input shape")
-    if support.shape != x.shape:
-        raise ValueError("Support mask shape must match input shape")
 
     # Compute new field with original phase, new magnitude
     phase = torch.angle(x)
@@ -197,45 +182,16 @@ def SF(
     return x_reflect_S
 
 
-def HIO(
-        x: torch.Tensor,
-        magnitude_S: torch.Tensor,
-        magnitude_M: torch.Tensor,
-        support: torch.Tensor,
-        beta: float = 0.7,
-        projector_S: callable = P_S,
-        projector_M: callable = P_M,
-    ) -> torch.Tensor:
+def HIO(x, magnitude_S, magnitude_M, support, beta=0.7,
+        projector_S=P_S, projector_M=P_M, enforce_magnitude=False):
+    """HIO: projected field inside support, x-beta*projection outside.
+
+    Default is support-only HIO. enforce_magnitude=True additionally imposes
+    the measured object amplitude inside the support (a two-plane variant).
     """
-    Hybrid Input-Output (HIO) algorithm iteration.
-
-    Args:
-        x: Complex input tensor [N, C, H, W]
-        magnitude_S: Desired support magnitude [N, C, H, W]
-        magnitude_M: Desired Fourier magnitude [N, C, H, W]
-        support: Boolean support mask [N, C, H, W]
-        beta: Relaxation parameter
-        projector_S: Callable for support projection
-        projector_M: Callable for magnitude projection
-
-    Returns:
-        Updated tensor after HIO iteration
-    """
-
-    # Initialize result
-    x_new = x.clone()
-
-    # Apply projections
     proj = projector_M(x, magnitude_M)
-    proj_S = projector_S(proj, magnitude_S, support)
-
-    # Apply support region update
-    x_new[support] = proj[support]
-
-    # Apply outside support region update
-    x_new[~support] = x[~support] - beta * proj_S[~support]
-
-    return x_new
+    inside = projector_S(proj, magnitude_S, support) if enforce_magnitude else proj
+    return torch.where(support, inside, x - beta * proj)
 
 
 def DM(
@@ -337,7 +293,7 @@ def HPR(
         Updated complex tensor after one HPR iteration
     """
     proj = projector_M(x, magnitude_M)
-    reflect_M = reflector_M(x, gamma_M=1.0, magnitude=magnitude_M)
+    reflect_M = 2 * proj - x if reflector_M is R_M else reflector_M(x, gamma_M=1.0, magnitude=magnitude_M)
     x1 = reflector_S(reflect_M + (beta - 1) * proj, gamma_S=1.0, magnitude=magnitude_S, support=support)
     x2 = (1 - beta) * proj
     return 0.5 * (x1 + x + x2)
@@ -370,170 +326,161 @@ def RAAR(
         Updated complex tensor after one RAAR iteration
     """
     proj = projector_M(x, magnitude_M)
-    asr = ASR(x, magnitude_S, magnitude_M, support, reflector_S=reflector_S, reflector_M=reflector_M)
+    reflected = 2 * proj - x if reflector_M is R_M else reflector_M(x, gamma_M=1.0, magnitude=magnitude_M)
+    asr = 0.5 * (reflector_S(reflected, 1., magnitude_S, support) + x)
     return beta * asr + (1 - beta) * proj
 
 
-def OSS(
-        x: torch.Tensor,
-        magnitude_S: torch.Tensor,
-        magnitude_M: torch.Tensor,
-        support: torch.Tensor,
-        beta: float = 0.7,
-        sigma: float = 1.0,
-        filter_decay: float = 0.99,
-        iteration: int = 0,
-        projector_S: callable = P_S,
-        projector_M: callable = P_M,
-    ) -> torch.Tensor:
+def smoothed_projection(x, magnitude_S, magnitude_M, support, beta=0.7,
+                        sigma=1., filter_decay=0.99, iteration=0,
+                        projector_S=P_S, projector_M=P_M):
+    """Experimental globally smoothed projection heuristic; not published OSS."""
+    proj = projector_S(projector_M(x, magnitude_M), magnitude_S, support)
+    return x + beta * (supports.gaussian_smoothing(proj, sigma * filter_decay ** iteration) - x)
+
+
+def OSS(*args, **kwargs):
+    """Deprecated alias for smoothed_projection, which is not standard OSS."""
+    warnings.warn('OSS implements a smoothing heuristic, not published OSS; '
+                  'use smoothed_projection explicitly', DeprecationWarning, stacklevel=2)
+    return smoothed_projection(*args, **kwargs)
+
+
+def _apply_gaussian_smoothing(x, sigma):
+    return supports.gaussian_smoothing(x, sigma)
+
+
+@torch.no_grad()
+def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
+        algorithm_kwargs=None, max_iter=100, *, metric_every=1,
+        track_best=False, return_best=False):
+    """Run NCHW projection iterations with on-device metric histories.
+
+    Metrics are recorded after each sampled update, including the final field.
+    Optional best tracking compares Fourier amplitude MSE each iteration per
+    batch/channel, including initialization. With return_best=True the last
+    history entry is recomputed for the selected returned field. best_iteration
+    uses zero for initialization. No reference field influences selection.
     """
-    OverSampling Smoothness (OSS) algorithm iteration.
+    if algorithm is None:
+        raise ValueError('You must provide an algorithm callable')
+    if max_iter < 0 or metric_every < 1:
+        raise ValueError('max_iter must be nonnegative; metric_every must be positive')
+    near, far = (m.abs() for m in magnitudes)
+    if near.ndim != 4 or near.shape != far.shape:
+        raise ValueError('Expected matching NCHW magnitudes')
+    kwargs = {} if algorithm_kwargs is None else dict(algorithm_kwargs)
+    support = torch.ones_like(near, dtype=torch.bool) if support is None else support
+    x = initializers.flat_phases(near) if init is None else init.clone()
+    if x.shape != near.shape:
+        raise ValueError('Initialization shape must match magnitudes')
+    x = transforms.apply_support(x, support)
+    results = {key: [] for key in ('mse_fourier', 'nmse_fourier', 'mse_near',
+                                   'pearson_fourier', 'pearson_fourier_intens')}
+    if target_field is not None:
+        results.update(quality=[], quality_phi=[])
+    steps = []
 
-    Args:
-        x: Complex tensor [N, C, H, W]
-        magnitude_S: Spatial magnitude constraint
-        magnitude_M: Fourier magnitude constraint
-        support: Boolean mask in spatial domain
-        beta: Relaxation parameter
-        sigma: Initial Gaussian smoothing width
-        filter_decay: Multiplicative decay per iteration
-        iteration: Current iteration number
-        projector_S: Spatial domain magnitude projector
-        projector_M: Fourier domain magnitude projector
+    def record(field, spectrum, step):
+        amplitude = spectrum.abs()
+        results['mse_fourier'].append(metrics.mse(amplitude, far))
+        results['nmse_fourier'].append(metrics.normalized_mse(amplitude, far))
+        results['mse_near'].append(metrics.mse(field, near, mask=support))
+        results['pearson_fourier'].append(metrics.pearson(amplitude, far, inversed=True))
+        results['pearson_fourier_intens'].append(metrics.pearson(amplitude.square(), far.square(), inversed=True))
+        if target_field is not None:
+            results['quality'].append(metrics.quality(field, target_field, inversed=True, mask=support))
+            results['quality_phi'].append(metrics.quality(
+                torch.exp(1j * field.angle()), torch.exp(1j * target_field.angle()),
+                inversed=True, mask=support))
+        steps.append(step)
 
-    Returns:
-        Updated complex tensor after OSS iteration
-    """
-    # Step 1: Fourier magnitude projection
-    x_new = projector_M(x, magnitude_M)
-
-    # Step 2: Spatial magnitude + support projection
-    x_new = projector_S(x_new, magnitude_S, support)
-
-    # Step 3: Apply smoothing
-    current_sigma = sigma * torch.pow(filter_decay, torch.tensor(iteration))
-    x_new = _apply_gaussian_smoothing(x_new, sigma=current_sigma)
-
-    # Step 4: Relaxation with relaxation parameter beta
-    return x + beta * (x_new - x)
-
-
-def _apply_gaussian_smoothing(
-        x: torch.Tensor,
-        sigma: float
-    ) -> torch.Tensor:
-    """
-    Apply 2D Gaussian smoothing to each channel of a 4D complex tensor.
-    """
-    if sigma <= 0:
-        return x  # No smoothing
-    
-    kernel_size = int(math.ceil(sigma * 6)) | 1  # Ensure odd size
-    device = x.device
-    gauss_kernel = _gaussian_kernel_2d(kernel_size, sigma, device=device)
-
-    # Reshape for depthwise conv
-    gauss_kernel = gauss_kernel.view(1, 1, kernel_size, kernel_size)
-    gauss_kernel = gauss_kernel.expand(x.shape[1], 1, kernel_size, kernel_size)  # C groups
-
-    # Apply real and imaginary parts separately
-    x_real = F.conv2d(x.real, gauss_kernel, padding=kernel_size // 2, groups=x.shape[1])
-    x_imag = F.conv2d(x.imag, gauss_kernel, padding=kernel_size // 2, groups=x.shape[1])
-    
-    return torch.complex(x_real, x_imag)
-
-
-def _gaussian_kernel_2d(kernel_size: int, sigma: float, device: torch.device) -> torch.Tensor:
-    """Create a 2D Gaussian kernel."""
-    ax = torch.arange(-kernel_size // 2 + 1., kernel_size // 2 + 1., device=device)
-    xx, yy = torch.meshgrid(ax, ax, indexing='ij')
-    kernel = torch.exp(-(torch.square(xx) + torch.square(yy)) / (2. * sigma**2))
-    kernel = kernel / kernel.sum()
-    return kernel
-
-
-def run(
-        magnitudes: Tuple[torch.Tensor, torch.Tensor],
-        support: Optional[torch.Tensor] = None,
-        target_field: Optional[torch.Tensor] = None,
-        init: Optional[torch.Tensor] = None,
-        algorithm: Callable = None,
-        algorithm_kwargs: Dict = {},
-        max_iter: int = 100,
-    ):
-    with torch.no_grad():
-        if algorithm is None:
-            raise ValueError("You must provide an algorithm callable")
-
-        if algorithm.__name__ == 'OSS':
-            algorithm_kwargs['iteration'] = 0
-
-        is_complex_target = target_field is not None and torch.is_complex(target_field)
-        results = {
-            'mse_fourier': [],
-            'pearson_fourier': [],
-            'pearson_fourier_intens': [],
-        }
-        if is_complex_target:
-            results['quality'] = []
-            results['quality_phi'] = []
-
-        # Init guess
-        x = initializers.flat_phases(magnitudes[0]) if init is None else init.clone()
-        if support is None:
-            support = torch.ones_like(magnitudes[0], dtype=torch.bool)
-
-        for i in range(max_iter):
-            x_tmp = transforms.fourier_transform(x)
-            abs_x_tmp = torch.abs(x_tmp)
-            
-            # Metrics
-            mse = metrics.mse(abs_x_tmp, magnitudes[1])
-            results['mse_fourier'].append(mse.detach())
-
-            results['pearson_fourier'].append(
-                metrics.pearson(abs_x_tmp, magnitudes[1], inversed=True).detach()
-            )
-            results['pearson_fourier_intens'].append(
-                metrics.pearson(torch.square(abs_x_tmp), torch.square(magnitudes[1]), inversed=True).detach()
-            )
-
-            if is_complex_target:
-                x_supp = x[support]
-                target_supp = target_field[support]
-                results['quality'].append(
-                    metrics.quality(x_supp, target_supp, inversed=True).detach()
-                )
-                results['quality_phi'].append(
-                    metrics.quality(torch.exp(1j * torch.angle(x_supp)), torch.exp(1j * torch.angle(target_supp)), inversed=True).detach()
-                )
-
-            if algorithm.__name__ == 'OSS':
-                algorithm_kwargs['iteration'] = i
-
-            x = algorithm(
-                x=x,
-                magnitude_S=magnitudes[0],
-                magnitude_M=magnitudes[1],
-                support=support,
-                **algorithm_kwargs,
-            )
-
-        # Stack metrics into tensors of shape [iterations, N, C]
-        for key in ['mse_fourier', 'pearson_fourier', 'pearson_fourier_intens', 'quality', 'quality_phi']:
-            if key in results and len(results[key]) > 0:
-                results[key] = torch.stack(results[key], dim=0)
-
+    track_best = track_best or return_best
+    if track_best:
+        best = x.clone()
+        best_loss = metrics.mse(transforms.fourier_transform(x), far)
+        best_step = torch.zeros_like(best_loss, dtype=torch.long)
+    for i in range(max_iter):
+        if algorithm in (OSS, smoothed_projection):
+            kwargs['iteration'] = i
+        x = algorithm(x=x, magnitude_S=near, magnitude_M=far, support=support, **kwargs)
+        sampled = (i + 1) % metric_every == 0 or i + 1 == max_iter
+        if sampled or track_best:
+            spectrum = transforms.fourier_transform(x)
+        if track_best:
+            loss = metrics.mse(spectrum, far)
+            better = loss < best_loss
+            best = torch.where(better[..., None, None], x, best)
+            best_step = torch.where(better, i + 1, best_step)
+            best_loss = torch.minimum(loss, best_loss)
+        if sampled:
+            record(x, spectrum, i + 1)
+    if max_iter == 0:
+        record(x, transforms.fourier_transform(x), 0)
+    if return_best:
+        x = best
+        for values in results.values():
+            values.pop()
+        steps.pop()
+        record(x, transforms.fourier_transform(x), max_iter)
+    results = {key: torch.stack(values) for key, values in results.items()}
+    results['iterations'] = torch.tensor(steps, device=x.device)
+    if track_best:
+        results.update(x_best=best, best_mse_fourier=best_loss, best_iteration=best_step)
     return x, results
 
+
+def run_restarts(magnitudes, support=None, n_restarts=4, generator=None,
+                 algorithm=RAAR, **run_kwargs):
+    """Batch independent random-phase starts; select by residual per N,C.
+
+    The restart axis is flattened into N during iteration. Returns selected
+    fields and diagnostics containing all restart histories (N*R batch order),
+    selected_restart [N,C], and selected Fourier amplitude MSE [N,C].
+    """
+    if n_restarts < 1:
+        raise ValueError('n_restarts must be positive')
+    near, far = magnitudes
+    if near.ndim != 4 or near.shape != far.shape:
+        raise ValueError('Expected matching NCHW magnitudes')
+    n, c, h, w = near.shape
+
+    def expand(tensor):
+        tensor = torch.broadcast_to(tensor, near.shape)
+        return tensor[:, None].expand(n, n_restarts, c, h, w).reshape(n*n_restarts, c, h, w)
+
+    expanded = (expand(near), expand(far))
+    mask = None if support is None else expand(support)
+    kwargs = dict(run_kwargs)
+    if 'init' in kwargs:
+        raise ValueError('run_restarts generates its own random initialization')
+    if kwargs.get('target_field') is not None:
+        kwargs['target_field'] = expand(kwargs['target_field'])
+    kwargs['return_best'] = True
+    candidates, histories = run(expanded, support=mask, algorithm=algorithm,
+                                init=initializers.random_phases(expanded[0], generator), **kwargs)
+    losses = histories['best_mse_fourier'].reshape(n, n_restarts, c)
+    selected_loss, selected = losses.min(dim=1)
+    index = selected[:, None, :, None, None].expand(n, 1, c, h, w)
+    output = candidates.reshape(n, n_restarts, c, h, w).gather(1, index).squeeze(1)
+    return output, {'selected_restart': selected, 'mse_fourier': selected_loss,
+                    'restart_results': histories}
 
 
 def report_convergence_results(results: dict, yscale: str = 'log', key: str = 'pearson_fourier_intens'):
     """Format is [iteration, N, C]"""
 
+    import matplotlib.pyplot as plt
+
     plt.figure()
+    steps = results.get('iterations')
+    steps = None if steps is None else steps.cpu()
     for i in range(results[key].shape[1]):
-        plt.plot(results[key][:, i, 0].cpu())
+        values = results[key][:, i, 0].cpu()
+        if steps is None:
+            plt.plot(values)
+        else:
+            plt.plot(steps, values)
     plt.yscale(yscale)
     plt.title('Fourier intensity evolution (1 - PCC)')
     plt.ylabel('1 - PCC')
@@ -545,7 +492,12 @@ def report_convergence_results(results: dict, yscale: str = 'log', key: str = 'p
 
 
 def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, power: float = 1, figsize: tuple[int, int] = (12, 7)):
-    cropped = slice(window_crop, -window_crop) if window_crop >= 1 else slice(0, -1)
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from speckleret.metrics import pearson
+    from speckleret.plots import complex_to_hsv
+
+    cropped = slice(window_crop, -window_crop) if window_crop >= 1 else slice(None)
     pcc_fourier_intensity = pearson(
         x=np.square(np.abs(ft[cropped, cropped])),
         y=np.square(np.abs(y_hat[cropped, cropped])),
@@ -567,7 +519,7 @@ def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, power:
 
     plt.subplot(2, 3, 3)
     plt.title('Retrieved NF: ' + r'$\hat{x}$')
-    plt.imshow(complex_to_hsv(x_hat[cropped, cropped], rmin=0, rmax=np.max(np.power(np.abs(x_hat), power)), power=power))
+    plt.imshow(complex_to_hsv(np.abs(x_hat[cropped, cropped]) ** power * np.exp(1j * np.angle(x_hat[cropped, cropped])), rmin=0, rmax=np.max(np.power(np.abs(x_hat), power))))
     plt.axis('off')
 
     plt.subplot(2, 3, 4)
@@ -581,7 +533,7 @@ def show_retrieved_fields(field, ft, x_hat, y_hat, window_crop: int = 60, power:
     plt.title('Retrieved FF: ' + r'$|\hat{y}|$' + f'^{power}')
 
     plt.subplot(2, 3, 6)
-    plt.imshow(complex_to_hsv(y_hat[cropped, cropped], rmin=0, rmax=np.max(np.power(np.abs(y_hat), power)), power=power))
+    plt.imshow(complex_to_hsv(np.abs(y_hat[cropped, cropped]) ** power * np.exp(1j * np.angle(y_hat[cropped, cropped])), rmin=0, rmax=np.max(np.power(np.abs(y_hat), power))))
     plt.axis('off')
     plt.title('Retrieved FF: ' + r'$\hat{y}$')
 
