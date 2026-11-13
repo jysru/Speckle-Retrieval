@@ -103,6 +103,79 @@ broadcastable boolean mask is supplied. Pearson returns zero for constant/empty
 images; overlap returns zero for zero-energy inputs. These are explicit policies
 for undefined cases, not evidence of physical disagreement.
 
+## Oversampling smoothness (OSS)
+
+`retrieval.OSS` implements the HIO update and Fourier Gaussian filtering of
+[Rodriguez et al. (2013), equations 1-5](https://doi.org/10.1107/S0021889813002471).
+The full HIO field is filtered; only values **outside** the support are replaced
+by the filtered result. Inside-support HIO values remain unchanged by smoothing.
+The previous global spatial-blur heuristic remains `smoothed_projection`.
+
+```python
+# Reuse near, far, support and device from the quick start above.
+field, diagnostics = retrieval.run_restarts(
+    (near, far), support=support, algorithm=retrieval.OSS,
+    n_restarts=4, max_iter=2000, metric_every=20,
+    algorithm_kwargs={'n_stages': 10, 'beta': 0.9},
+    generator=torch.Generator(device=device).manual_seed(10),
+)
+print('OSS Fourier R factor:', diagnostics['r_factor_fourier'].cpu())
+```
+
+The default is a support-only **complex-field extension** suitable for speckles.
+Measured near-field amplitude initializes the field but is not imposed in the
+iterations. `enforce_magnitude=True` explicitly adds that two-plane constraint.
+For the original real/nonnegative density model, set `positivity=True` instead;
+this discards imaginary density components and uses HIO feedback for negative
+projected density, including inside the support. These two options are exclusive.
+The density mode requires only Fourier amplitudes and an object support: pass a
+placeholder initialization amplitude such as `torch.ones_like(far)` as the first
+magnitude, rather than supplying the unknown density. Raw OSS iterates retain
+feedback outside the support; they are not support-clipped final projections.
+Use `transforms.apply_support(field, support)` explicitly when extracting the
+object-only field; its residual can differ from that of the raw iteration state.
+
+The framework supplies:
+
+- A default ten-stage schedule with Fourier-bin bandwidth `(alpha_y,alpha_x)`
+  decreasing linearly from `(H,W)` to `(1/H,1/W)`. Rectangular grids use independent
+  axis widths. The paper used square arrays, 2000 updates, and 100 random starts;
+  counts and the rectangular generalization are configurable here.
+- Equal stage lengths when possible; otherwise the earliest stages receive one
+  extra update. Short runs use `min(n_stages,max_iter)` nonempty stages. A single
+  stage uses the initial broad filter. `oss_bandwidth()` exposes this schedule.
+- Best-candidate handoff at each stage boundary, independently per batch/channel.
+  Selection uses `R_F = sum(abs(target - gamma*predicted))/sum(target)`, where
+  `gamma=sum(target*predicted)/sum(predicted**2)` is our explicit least-squares
+  scale convention. The paper specifies a scale factor but not its estimator.
+  Only candidates produced within that stage compete; the last stage's best is
+  returned by default. No reference field influences selection.
+- `oss_stage_bounds` (zero-based, stop exclusive), `oss_stage_alpha`,
+  `oss_stage_best_r_factor`, and `oss_stage_best_iteration` diagnostics in `run()`
+  results or in `run_restarts()`'s `restart_results`. Best iteration numbers are
+  one-based global update numbers. `r_factor_fourier` is also included in sampled
+  metric histories. Zero-update runs return initialization and empty stage data.
+
+`run_restarts()` ranks OSS's final-stage candidates by R_F, whereas other
+algorithms retain their existing global-MSE selection. Its `mse_fourier` diagnostic
+still reports actual MSE, even for OSS. In a direct `run()` call,
+`return_best=True` explicitly overrides the last-stage result with the global MSE
+winner; this is not the published OSS selection procedure.
+
+For a single update or manual loop, `OSS(..., alpha=...)` accepts a scalar or
+`(alpha_y,alpha_x)` in **Fourier bins**, not a spatial Gaussian sigma. Without a
+fixed alpha, pass zero-based `iteration` and the total `max_iter`; manual loops
+must manage stage handoffs themselves. `run()` and `run_restarts()` do this
+management automatically, including with keyword-bound `functools.partial(OSS, ...)`.
+An explicit object support is required. The removed heuristic's `sigma` and
+`filter_decay` arguments belong to `smoothed_projection`, not actual OSS.
+
+The Fourier Gaussian cache holds 16 filters and can be released with
+`transforms.clear_fourier_gaussian_cache()`. R_F is defined as one for an all-zero
+prediction against a nonzero target; for a zero target it returns unscaled L1
+amplitude residual. Neither a low residual nor the original paper's comparisons
+establishes improved recovery for every complex speckle dataset.
+
 ## Propagation and sampling
 
 - Centered unitary transforms use `fftshift(fft2(ifftshift(x), norm='ortho'))`
@@ -146,8 +219,9 @@ The distinction between angular-spectrum and Fresnel propagation follows the
 - `fresnel_transform` retains the historical angular-spectrum meaning with a
   deprecation warning; its legacy `propagator` argument remains a phase in radians.
   New code should use the explicitly named propagation functions above.
-- `OSS` is a deprecated alias for `smoothed_projection`, an experimental global
-  smoothing heuristic, **not** the [published OSS algorithm](https://arxiv.org/abs/1211.4519).
+- `OSS` now implements oversampling smoothness with staged Fourier filtering.
+  Use `smoothed_projection` to retain the earlier global-blur heuristic; see the
+  OSS section for the distinction between density and complex-field constraints.
 - `spectral`, `truncated_spectral`, and `orthogonal` are deprecated heuristic names.
   Use `autocorrelation_svd`, `thresholded_random_phase`, and
   `random_phase_multistart`, respectively. In the thresholded initializer,
@@ -163,6 +237,8 @@ The distinction between angular-spectrum and Fresnel propagation follows the
 python -m pytest -q
 python -m benchmarks.torch_reconstruction --method phase --device cpu
 python -m benchmarks.torch_reconstruction --method raar --device cuda --restarts 4
+# Original real/nonnegative OSS mode with Poisson-corrupted intensities:
+python -m benchmarks.torch_reconstruction --method oss --object-type positive --iterations 2000 --photons-per-peak 1000
 # Sensitivity to intensity noise and a one-pixel far-field calibration error:
 python -m benchmarks.torch_reconstruction --method raar --noise-std 0.001 --shift-x 1
 ```
@@ -173,8 +249,9 @@ fields, per-image selection, and seeded reconstruction. CUDA parity checks run
 when CUDA is available. CPU CI covers Python 3.10 and 3.12.
 
 The benchmark emits JSON with configuration, versions, synchronized wall time,
-per-image measured and ideal Fourier NMSE, and overlap with the known synthetic
-field. Success fraction is explicitly based on the measurement NMSE threshold;
+per-image raw measured and ideal Fourier NMSE, support-masked Fourier NMSE,
+scaled Fourier R factor, and overlap with the known synthetic field inside the
+support. Success fraction is explicitly based on the raw measurement NMSE threshold;
 it is not a claim of unique or experimentally verified phase recovery. Timing
 includes reconstruction diagnostics but excludes synthetic data generation.
 Compare configurations on the same machine; the benchmark makes no GPU speedup

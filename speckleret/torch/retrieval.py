@@ -1,5 +1,5 @@
 """Batched projection algorithms and measurement-based reconstruction tracking."""
-import warnings
+from functools import lru_cache, partial
 from . import supports
 
 import torch
@@ -339,11 +339,79 @@ def smoothed_projection(x, magnitude_S, magnitude_M, support, beta=0.7,
     return x + beta * (supports.gaussian_smoothing(proj, sigma * filter_decay ** iteration) - x)
 
 
-def OSS(*args, **kwargs):
-    """Deprecated alias for smoothed_projection, which is not standard OSS."""
-    warnings.warn('OSS implements a smoothing heuristic, not published OSS; '
-                  'use smoothed_projection explicitly', DeprecationWarning, stacklevel=2)
-    return smoothed_projection(*args, **kwargs)
+@lru_cache(maxsize=64)
+def _oss_stages(shape, max_iter, n_stages):
+    if not isinstance(max_iter, int) or max_iter < 1:
+        raise ValueError('OSS max_iter must be a positive integer')
+    if not isinstance(n_stages, int) or n_stages < 1:
+        raise ValueError('OSS n_stages must be a positive integer')
+    h, w = shape
+    count = min(n_stages, max_iter)
+    length, remainder = divmod(max_iter, count)
+    start, schedule = 0, []
+    for stage in range(count):
+        progress = stage / (count - 1) if count > 1 else 0.
+        alpha = ((1-progress)*h + progress/h, (1-progress)*w + progress/w)
+        stop = start + length + (stage < remainder)
+        schedule.append((start, stop, alpha))
+        start = stop
+    return tuple(schedule)
+
+
+def oss_bandwidth(shape, iteration=0, max_iter=2000, n_stages=10):
+    """Staged Fourier-bin bandwidths, linearly decreasing from (H,W) to (1/H,1/W).
+
+    Stages differ by at most one iteration; the first stages get the remainder.
+    Short runs use min(n_stages,max_iter) nonempty stages. A single stage uses
+    the initial broad filter. iteration is zero based and must be inside the run.
+    """
+    schedule = _oss_stages(tuple(shape), max_iter, n_stages)
+    if not isinstance(iteration, int) or not 0 <= iteration < max_iter:
+        raise ValueError('OSS iteration must satisfy 0 <= iteration < max_iter')
+    return next(alpha for start, stop, alpha in schedule if start <= iteration < stop)
+
+
+def OSS(x, magnitude_S, magnitude_M, support, beta=0.9, *, alpha=None,
+        iteration=0, max_iter=2000, n_stages=10, positivity=False,
+        enforce_magnitude=False, projector_S=P_S, projector_M=P_M):
+    """One oversampling-smoothness update (Rodriguez et al., JAC 2013, eqs. 1-4).
+
+    Apply Fourier magnitude projection, HIO, then Fourier Gaussian filtering of
+    the ENTIRE HIO field; retain the filtered result only OUTSIDE the support.
+    alpha is Fourier-bin bandwidth, not spatial sigma. run() supplies the stage
+    schedule and carries each stage's lowest-R_F field into the next stage.
+
+    Default: complex support-only extension for speckles. positivity=True uses
+    the paper's real/nonnegative density constraint (discarding imaginary parts).
+    enforce_magnitude=True is an optional two-plane extension for complex fields,
+    not part of the original density algorithm. The two extensions are exclusive.
+    Source: https://doi.org/10.1107/S0021889813002471
+    """
+    if not torch.is_complex(x) or x.ndim != 4:
+        raise ValueError('OSS expects a complex NCHW field')
+    if not 0 < beta <= 1:
+        raise ValueError('OSS beta must be in (0,1]')
+    if positivity and enforce_magnitude:
+        raise ValueError('Choose positivity or measured magnitude, not both')
+    if alpha is None:
+        alpha = oss_bandwidth(x.shape[-2:], iteration, max_iter, n_stages)
+    if positivity:
+        proj = projector_M(x, magnitude_M).real
+        accepted = support & (proj >= 0)
+        density = torch.where(accepted, proj, x.real - beta * proj)
+        hio = torch.complex(density, torch.zeros_like(density))
+    else:
+        hio = HIO(x, magnitude_S, magnitude_M, support, beta,
+                  projector_S, projector_M, enforce_magnitude)
+    filtered = transforms.fourier_gaussian_smoothing(hio, alpha)
+    output = torch.where(support, hio, filtered)
+    if positivity:
+        output = torch.complex(output.real, torch.zeros_like(output.real))
+    return output
+
+
+def _is_oss(algorithm):
+    return algorithm is OSS or isinstance(algorithm, partial) and _is_oss(algorithm.func)
 
 
 def _apply_gaussian_smoothing(x, sigma):
@@ -361,6 +429,11 @@ def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
     batch/channel, including initialization. With return_best=True the last
     history entry is recomputed for the selected returned field. best_iteration
     uses zero for initialization. No reference field influences selection.
+
+    OSS always carries the lowest scaled Fourier R-factor candidate of each
+    stage into the next, independently per N,C, and returns the last stage's
+    best by default. return_best=True explicitly overrides this with the global
+    MSE choice, which is not the published OSS selection procedure.
     """
     if algorithm is None:
         raise ValueError('You must provide an algorithm callable')
@@ -370,13 +443,26 @@ def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
     if near.ndim != 4 or near.shape != far.shape:
         raise ValueError('Expected matching NCHW magnitudes')
     kwargs = {} if algorithm_kwargs is None else dict(algorithm_kwargs)
+    is_oss = _is_oss(algorithm)
+    if is_oss:
+        # Unwrap keyword partials so the runner and iteration share one schedule.
+        while isinstance(algorithm, partial):
+            if algorithm.args:
+                raise ValueError('OSS partials must bind keyword options only')
+            kwargs = {**algorithm.keywords, **kwargs}
+            algorithm = algorithm.func
+        if support is None:
+            raise ValueError('OSS requires an explicit object support')
+        schedule = _oss_stages(tuple(near.shape[-2:]), max_iter, kwargs.get('n_stages', 10)) if max_iter else ()
+        kwargs['max_iter'] = max_iter
     support = torch.ones_like(near, dtype=torch.bool) if support is None else support
     x = initializers.flat_phases(near) if init is None else init.clone()
     if x.shape != near.shape:
         raise ValueError('Initialization shape must match magnitudes')
     x = transforms.apply_support(x, support)
     results = {key: [] for key in ('mse_fourier', 'nmse_fourier', 'mse_near',
-                                   'pearson_fourier', 'pearson_fourier_intens')}
+                                   'pearson_fourier', 'pearson_fourier_intens',
+                                   'r_factor_fourier')}
     if target_field is not None:
         results.update(quality=[], quality_phi=[])
     steps = []
@@ -388,6 +474,7 @@ def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
         results['mse_near'].append(metrics.mse(field, near, mask=support))
         results['pearson_fourier'].append(metrics.pearson(amplitude, far, inversed=True))
         results['pearson_fourier_intens'].append(metrics.pearson(amplitude.square(), far.square(), inversed=True))
+        results['r_factor_fourier'].append(metrics.fourier_r_factor(amplitude, far))
         if target_field is not None:
             results['quality'].append(metrics.quality(field, target_field, inversed=True, mask=support))
             results['quality_phi'].append(metrics.quality(
@@ -400,12 +487,15 @@ def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
         best = x.clone()
         best_loss = metrics.mse(transforms.fourier_transform(x), far)
         best_step = torch.zeros_like(best_loss, dtype=torch.long)
+    stage_index = 0
+    stage_best = stage_loss = stage_step = None
+    stage_scores, stage_steps = [], []
     for i in range(max_iter):
-        if algorithm in (OSS, smoothed_projection):
+        if is_oss or algorithm is smoothed_projection:
             kwargs['iteration'] = i
         x = algorithm(x=x, magnitude_S=near, magnitude_M=far, support=support, **kwargs)
         sampled = (i + 1) % metric_every == 0 or i + 1 == max_iter
-        if sampled or track_best:
+        if sampled or track_best or is_oss:
             spectrum = transforms.fourier_transform(x)
         if track_best:
             loss = metrics.mse(spectrum, far)
@@ -413,6 +503,25 @@ def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
             best = torch.where(better[..., None, None], x, best)
             best_step = torch.where(better, i + 1, best_step)
             best_loss = torch.minimum(loss, best_loss)
+        if is_oss:
+            score = metrics.fourier_r_factor(spectrum, far)
+            if stage_best is None:
+                stage_best, stage_loss = x.clone(), score
+                stage_step = torch.full_like(score, i + 1, dtype=torch.long)
+            else:
+                better = score < stage_loss
+                stage_best = torch.where(better[..., None, None], x, stage_best)
+                stage_step = torch.where(better, i + 1, stage_step)
+                stage_loss = torch.minimum(score, stage_loss)
+            if i + 1 == schedule[stage_index][1]:
+                # A fresh stage starts from the previous stage's best candidate;
+                # neither the stage input nor an earlier stage competes in it.
+                x = stage_best
+                spectrum = transforms.fourier_transform(x)
+                stage_scores.append(stage_loss)
+                stage_steps.append(stage_step)
+                stage_best = stage_loss = stage_step = None
+                stage_index += 1
         if sampled:
             record(x, spectrum, i + 1)
     if max_iter == 0:
@@ -427,6 +536,14 @@ def run(magnitudes, support=None, target_field=None, init=None, algorithm=None,
     results['iterations'] = torch.tensor(steps, device=x.device)
     if track_best:
         results.update(x_best=best, best_mse_fourier=best_loss, best_iteration=best_step)
+    if is_oss:
+        shape = (0, *near.shape[:2])
+        results['oss_stage_best_r_factor'] = torch.stack(stage_scores) if stage_scores else near.new_empty(shape)
+        results['oss_stage_best_iteration'] = torch.stack(stage_steps) if stage_steps else torch.empty(shape, device=near.device, dtype=torch.long)
+        results['oss_stage_bounds'] = torch.tensor([(a, b) for a, b, _ in schedule], device=near.device, dtype=torch.long).reshape(-1, 2)
+        alphas = [bandwidth if kwargs.get('alpha') is None else kwargs['alpha'] for _, _, bandwidth in schedule]
+        alphas = [(a, a) if isinstance(a, (int, float)) else a for a in alphas]
+        results['oss_stage_alpha'] = near.new_tensor(alphas).reshape(-1, 2)
     return x, results
 
 
@@ -437,6 +554,8 @@ def run_restarts(magnitudes, support=None, n_restarts=4, generator=None,
     The restart axis is flattened into N during iteration. Returns selected
     fields and diagnostics containing all restart histories (N*R batch order),
     selected_restart [N,C], and selected Fourier amplitude MSE [N,C].
+    For OSS, select final-stage candidates by scaled R_F instead, reported as
+    r_factor_fourier; mse_fourier remains the selected candidate's actual MSE.
     """
     if n_restarts < 1:
         raise ValueError('n_restarts must be positive')
@@ -456,15 +575,27 @@ def run_restarts(magnitudes, support=None, n_restarts=4, generator=None,
         raise ValueError('run_restarts generates its own random initialization')
     if kwargs.get('target_field') is not None:
         kwargs['target_field'] = expand(kwargs['target_field'])
-    kwargs['return_best'] = True
+    is_oss = _is_oss(algorithm)
+    # OSS ranks final-stage candidates by R_F, not by an earlier stage's MSE.
+    kwargs['return_best'] = not is_oss
     candidates, histories = run(expanded, support=mask, algorithm=algorithm,
                                 init=initializers.random_phases(expanded[0], generator), **kwargs)
-    losses = histories['best_mse_fourier'].reshape(n, n_restarts, c)
+    if is_oss:
+        candidate_spectrum = transforms.fourier_transform(candidates)
+        losses = metrics.fourier_r_factor(candidate_spectrum, expanded[1]).reshape(n, n_restarts, c)
+    else:
+        losses = histories['best_mse_fourier'].reshape(n, n_restarts, c)
     selected_loss, selected = losses.min(dim=1)
     index = selected[:, None, :, None, None].expand(n, 1, c, h, w)
     output = candidates.reshape(n, n_restarts, c, h, w).gather(1, index).squeeze(1)
-    return output, {'selected_restart': selected, 'mse_fourier': selected_loss,
-                    'restart_results': histories}
+    diagnostics = {'selected_restart': selected, 'restart_results': histories}
+    if is_oss:
+        candidate_mse = metrics.mse(candidate_spectrum, expanded[1]).reshape(n, n_restarts, c)
+        diagnostics['r_factor_fourier'] = selected_loss
+        diagnostics['mse_fourier'] = candidate_mse.gather(1, selected[:, None]).squeeze(1)
+    else:
+        diagnostics['mse_fourier'] = selected_loss
+    return output, diagnostics
 
 
 def report_convergence_results(results: dict, yscale: str = 'log', key: str = 'pearson_fourier_intens'):

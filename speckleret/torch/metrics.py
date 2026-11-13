@@ -38,6 +38,22 @@ def normalized_mse(x, y, mask=None):
     return mse(x, y, mask) / torch.where(energy > 0, energy, 1)
 
 
+def fourier_r_factor(x, y):
+    """Scaled L1 Fourier amplitude residual per image (OSS stage ranking).
+
+    gamma = sum(|x|*|y|)/sum(|x|**2) is a least-squares amplitude scale;
+    R_F = sum(abs(|y|-gamma*|x|))/sum(|y|). For an all-zero target,
+    return the unscaled amplitude L1 norm instead of an undefined 0/0.
+    """
+    x, y = x.abs(), y.abs()
+    energy = x.square().sum(dim=(-2, -1))
+    gamma = (x * y).sum(dim=(-2, -1)) / torch.where(energy > 0, energy, 1)
+    residual = (y - gamma[..., None, None] * x).abs().sum(dim=(-2, -1))
+    total = y.sum(dim=(-2, -1))
+    return torch.where(total > 0, residual / torch.where(total > 0, total, 1),
+                       x.sum(dim=(-2, -1)))
+
+
 def dot_product(x, y, normalized=True, mask=None):
     """Complex inner product, optionally normalized by the two L2 norms."""
     prod = _masked(x * y.conj(), mask).sum(dim=(-2, -1))

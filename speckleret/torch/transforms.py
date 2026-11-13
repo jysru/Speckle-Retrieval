@@ -69,6 +69,33 @@ def inverse_fourier_transform(field, norm='ortho'):
     )
 
 
+@lru_cache(maxsize=16)
+def _fourier_gaussian(h, w, alpha_y, alpha_x, device, dtype):
+    ky = torch.arange(h, device=device, dtype=dtype) - h // 2
+    kx = torch.arange(w, device=device, dtype=dtype) - w // 2
+    return torch.exp(-0.5 * ((ky[:, None] / alpha_y).square()
+                             + (kx[None, :] / alpha_x).square()))
+
+
+def fourier_gaussian_smoothing(field, alpha):
+    """Periodic Gaussian low-pass: alpha is bandwidth in Fourier bins.
+
+    A scalar uses the same bandwidth on both axes; (alpha_y,alpha_x) supports
+    rectangular arrays. Unlike a spatial Gaussian sigma, smaller alpha means
+    stronger smoothing. DC gain is one. The bounded cache holds 16 filters.
+    """
+    alpha_y, alpha_x = (alpha, alpha) if isinstance(alpha, (int, float)) else alpha
+    if not (0 < alpha_y < float('inf') and 0 < alpha_x < float('inf')):
+        raise ValueError('Fourier Gaussian bandwidths must be positive and finite')
+    window = _fourier_gaussian(*field.shape[-2:], float(alpha_y), float(alpha_x),
+                               field.device, field.real.dtype)
+    return inverse_fourier_transform(fourier_transform(field) * window)
+
+
+def clear_fourier_gaussian_cache():
+    _fourier_gaussian.cache_clear()
+
+
 def _spacings(pixel_size):
     dy, dx = (pixel_size, pixel_size) if isinstance(pixel_size, (int, float)) else pixel_size
     if min(dy, dx) <= 0:
