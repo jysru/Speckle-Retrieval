@@ -23,6 +23,16 @@ configuration from the repository root.
 
 ## PyTorch quick start
 
+For an executed end-to-end example with the bundled GRIN speckle field, see
+[the PyTorch reconstruction walkthrough](notebooks/pytorch_reconstruction_walkthrough.ipynb).
+It compares Adam, RAAR followed by ER, and RAAR-ER followed by Adam on a shared
+starting field, with side-by-side recovered phases and phase errors.
+
+For experimental hollow-core camera data, see
+[the experimental PyTorch reconstruction notebook](notebooks/experimental_hollow_core_pytorch_reconstruction.ipynb).
+It loads the dated NF/FF NPZ pair, offers support and reconstruction choices,
+and compares Fourier intensity PCC without modal decomposition.
+
 Inputs have shape `[N,C,H,W]`: batch, channel, height, width. Magnitudes are
 **field amplitudes**, not camera intensities. After background correction, a
 nonnegative measured intensity is converted with `intensity.clamp_min(0).sqrt()`.
